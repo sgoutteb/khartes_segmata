@@ -2976,6 +2976,26 @@ class MainWindow(QMainWindow):
         self.app.processEvents()
         self.drawSlices()
 
+    def setColormapIsIndicator(self, volume_view, flag):
+        if volume_view.colormap_is_indicator == flag:
+            return
+        volume_view.setColormapIsIndicator(flag)
+        '''
+        pv = self.project_view
+        if volume_view == pv.cur_volume:
+            self.surface.setVolumeView(volume_view);
+        else:
+            for i, ovv in enumerate(pv.overlay_volume_views):
+                if volume_view == ovv:
+                    self.surface.setOverlayVolumeView(i, volume_view)
+                    break
+        '''
+        # TODO: setting the cursor doesn't seem to work!
+        self.app.setOverrideCursor(QCursor(Qt.WaitCursor))
+        self.app.processEvents()
+        self.drawSlices()
+        self.app.restoreOverrideCursor()
+
     def setVolume(self, volume, no_notify=False):
         pv = self.project_view
         # TODO: if volume is same as any overlay, set that overlay

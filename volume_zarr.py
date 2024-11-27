@@ -337,6 +337,7 @@ class KhartesThreadedLRUCache(zarr.storage.LRUStoreCache):
         self.executor._work_queue = queue.LifoQueue()
         self.compressor = None
         self.dtype = None
+        self.expected_bytes = None
 
     def __getitem__old(self, key):
         print("get item", key)
@@ -363,6 +364,8 @@ class KhartesThreadedLRUCache(zarr.storage.LRUStoreCache):
         self.compressor = array._compressor
         array._compressor = None
         self.dtype = array.dtype
+        c = array.chunks
+        self.expected_bytes = c[0]*c[1]*c[2]*array.dtype.itemsize
 
     def setImmediateDataMode(self, flag):
         with self._mutex:
@@ -451,8 +454,12 @@ class KhartesThreadedLRUCache(zarr.storage.LRUStoreCache):
                 # Check if key is the name of a metadata file
                 # (for instance, '0/.zarray'), in which case
                 # the value must be read immediately
+                '''
                 parts = key.split('/')
                 if parts[-1][0] == '.':
+                    wait_for_data = True
+                '''
+                if self.is_dotfile(key):
                     wait_for_data = True
             raise_error = False
             with self._mutex:
@@ -488,6 +495,10 @@ class KhartesThreadedLRUCache(zarr.storage.LRUStoreCache):
                 future.add_done_callback(lambda x: self.processValue(key, x))
                 raise KeyError(key)
 
+    def is_dotfile(self, key):
+        parts = key.split('/')
+        return parts[-1][0] == '.'
+
     # This function gets a chunk from the underlying data
     # store.  The access may cause an exception to be thrown.
     # This function does not try to catch exceptions, because
@@ -497,19 +508,48 @@ class KhartesThreadedLRUCache(zarr.storage.LRUStoreCache):
     # here.
     def getValue(self, key):
         # print("getValue", key)
-        value = self._store[key]
-        # print("nv", type(value), len(value))
-        if len(value) > 0 and self.compressor is not None:
-            for i in range(3):
+        try_count = 10
+        try_wait = 2
+        for i in range(try_count):
+            try:
+                if i > 0:
+                    print(key,"try",i+1,"getting value")
+                value = self._store[key]
+                if value is None:
+                    print(key,"try",i+1,"got value None")
+                elif i > 0:
+                    print(key,"try",i+1,"got value",len(value))
+            except KeyError as e:
+                raise KeyError(key)
+            except Exception as e:
+                print("read failure try %d: %s"%(i+1,e))
+                time.sleep(try_wait)
+                continue
+
+            # print("nv", type(value), len(value))
+            if value is not None and len(value) > 0 and self.compressor is not None:
                 try:
+                    if i > 0:
+                        print(key,"try",i+1,"decompressing",len(value))
                     dc = self.compressor.decode(value)
-                    break
+                    if dc is None:
+                        print(key,"try",i+1,"decompressed to None")
+                    elif i > 0:
+                        print(key,"try",i+1,"decompressed",len(dc))
                 except Exception as e:
-                    print("decompression failure try %d: %s"%(i+1, e))
-            # print("dc", type(dc), len(dc))
-            return dc
-        # print("  found", key)
-        return value
+                    print(key,"decompression failure try %d %d bytes: %s"%(i+1, len(value), e))
+                    time.sleep(try_wait)
+                    continue
+                # print("dc", type(dc), len(dc))
+                value = dc
+            # print("  found", key)
+            lv = len(value)
+            # if not self.is_dotfile(key) and lv != 128*128*128:
+            if not self.is_dotfile(key) and (self.expected_bytes is None or lv != self.expected_bytes):
+                print(key,"unexpected value length", lv, key)
+                time.sleep(try_wait)
+                continue
+            return value
 
     def cacheValue(self, key, value):
         with self._mutex:

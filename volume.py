@@ -324,7 +324,7 @@ tiff files is aligned with the slice vertical axes""",
         # if col in (0,1,2):
         #     return Qt.ItemIsEditable|Qt.ItemIsEnabled
         oflags = super(VolumesModel, self).flags(index)
-        if col in self.columnIndices(["Base", "O1", "O2"]):
+        if col in self.columnIndices(["Base", "O1", "O2", "Ind"]):
             # print(col, int(oflags))
             nflags = Qt.ItemNeverHasChildren
             nflags |= Qt.ItemIsUserCheckable
@@ -400,6 +400,11 @@ tiff files is aligned with the slice vertical axes""",
         if column in self.columnIndices(["Base", "O1", "O2"]):
             ovv = self.getVolumeViewOrOverlay(column)
             if ovv == volume_view:
+                return Qt.Checked
+            else:
+                return Qt.Unchecked
+        if column in self.columnIndices(["Ind"]):
+            if volume_view.colormap_is_indicator:
                 return Qt.Checked
             else:
                 return Qt.Unchecked
@@ -547,6 +552,9 @@ tiff files is aligned with the slice vertical axes""",
             # self.main_window.setVolume(volume)
             self.setVolumeOrOverlay(column, volume)
             # return True
+        if role == Qt.CheckStateRole and column in self.columnIndices(["Ind"]):
+            cv = Qt.CheckState(value)
+            self.main_window.setColormapIsIndicator(volume_view, cv == Qt.Checked)
         if role == Qt.EditRole and column == self.columnIndex("Color"):
             color = value
             # volumes = self.project_view.volumes
@@ -611,7 +619,7 @@ class VolumeView():
         # Same for opacity as for color
         self.opacity = 1.
 
-        self.colormap_range = (0., 1.)
+        self.colormap_range = [0., 1.]
         self.colormap_name = ""
         self.colormap_lut = None
         self.colormap_lut_timestamp = Utils.timestamp()
@@ -619,6 +627,26 @@ class VolumeView():
             self.colormap_is_indicator = True
         else:
             self.colormap_is_indicator = False
+
+    def setColormapRange(self, mn, mx, no_notify=False):
+        changed = False
+        if mx is not None:
+            mx = min(1., mx)
+            mx = max(0., mx)
+            if self.colormap_range[1] != mx:
+                self.colormap_range[1] = mx
+                changed = True
+        if mn is not None:
+            if mx is None:
+                mx = self.colormap_range[1]
+            mn = min(1., mn)
+            mn = max(0., mn)
+            mn = min(mn, mx)
+            if self.colormap_range[0] != mn:
+                self.colormap_range[0] = mn
+                changed = True
+        if not no_notify and changed:
+            self.notifyModified()
 
     def notifyModified(self, tstamp=""):
         if tstamp == "":
@@ -658,6 +686,13 @@ class VolumeView():
         cmap = Utils.ColorMap(colormap_name, v.dtype, 1., self.colormap_range)
         self.colormap_lut = cmap.lut
         self.colormap_lut_timestamp = Utils.timestamp()
+        if not no_notify:
+            self.notifyModified()
+
+    def setColormapIsIndicator(self, flag, no_notify=False):
+        if self.colormap_is_indicator == flag:
+            return
+        self.colormap_is_indicator = flag;
         if not no_notify:
             self.notifyModified()
 

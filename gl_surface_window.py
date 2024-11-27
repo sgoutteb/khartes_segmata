@@ -729,8 +729,10 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         self.overlay_count = ProjectView.overlay_count
         self.volume_view =  None
         self.volume_view_direction = -1
+        self.volume_view_is_indicator = False
         self.overlay_volume_views = self.overlay_count*[None]
         self.overlay_volume_view_directions = self.overlay_count*[-1]
+        self.overlay_volume_view_is_indicator = self.overlay_count*[False]
         self.active_fragment = None
         self.atlas = None
         self.overlay_atlases = self.overlay_count*[None]
@@ -923,9 +925,10 @@ class GLSurfaceWindowChild(GLDataWindowChild):
             mfv = pv.mainActiveFragmentView(unaligned_ok=True)
         if self.active_fragment != mfv:
             self.active_fragment = mfv
-        if self.volume_view != dw.volume_view or self.volume_view_direction != self.volume_view.direction :
+        if self.volume_view != dw.volume_view or self.volume_view_direction != self.volume_view.direction or self.volume_view_is_indicator != self.volume_view.colormap_is_indicator:
             self.volume_view = dw.volume_view
             self.volume_view_direction = self.volume_view.direction
+            self.volume_view_is_indicator = self.volume_view.colormap_is_indicator
             self.atlas = self.createAtlas(self.volume_view, 0)
             # self.atlas.setVolumeView(self.volume_view)
             '''
@@ -953,9 +956,12 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         for i in range(self.overlay_count):
             if dw.overlay_volume_views[i] is None:
                 continue
-            if self.overlay_volume_views[i] != dw.overlay_volume_views[i] or self.overlay_volume_view_directions[i] != self.overlay_volume_views[i].direction :
+            if self.overlay_atlases[i] is not None:
+                self.overlay_atlases[i].in_use = True
+            if self.overlay_volume_views[i] != dw.overlay_volume_views[i] or self.overlay_volume_view_directions[i] != self.overlay_volume_views[i].direction or self.overlay_volume_view_is_indicator[i] != self.overlay_volume_views[i].colormap_is_indicator:
                 self.overlay_volume_views[i] = dw.overlay_volume_views[i]
                 self.overlay_volume_view_directions[i] = dw.overlay_volume_views[i].direction
+                self.overlay_volume_view_is_indicator[i] = dw.overlay_volume_views[i].colormap_is_indicator
                 self.overlay_atlases[i] = self.createAtlas(self.overlay_volume_views[i], 1+i)
 
 
@@ -1315,10 +1321,12 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         #     return
         self.atlas.displayBlocks(self.base_data_fbo, self.active_vao, stxy_xform)
         for i in range(self.overlay_count):
+            # print(i)
             atlas = self.overlay_atlases[i]
             if not Atlas.isInUse(atlas):
                 continue
             fbo = self.overlay_data_fbos[i]
+            # print("",i)
             atlas.displayBlocks(fbo, self.active_vao, stxy_xform)
 
     # pts are in form stxy.x, stxy.y, index
