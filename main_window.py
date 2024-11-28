@@ -1478,6 +1478,8 @@ class MainWindow(QMainWindow):
         vbv.setStyleSheet("QCheckBox { %s; padding: 5; }"%self.highlightedBackgroundStyle())
         # vbv.setPalette(palette)
         hlayout.addWidget(vbv)
+        self.delete_vol = DeleteActiveVolumeButton(self)
+        hlayout.addWidget(self.delete_vol)
         hlayout.addStretch()
         vlayout.addLayout(hlayout)
         self.volumes_table = QTableView()
@@ -1867,6 +1869,38 @@ class MainWindow(QMainWindow):
         # mf = mfv.fragment
         mfv.moveAlongNormals(step)
         self.drawSlices()
+
+    def deleteActiveVolume(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot delete volume without project")
+            return
+        
+        cv = pv.cur_volume
+        if cv is None:
+            print("No currently selected volume")
+            return
+            
+        # Show confirmation dialog
+        reply = QMessageBox.question(self, 'Delete Volume',
+                                   f'Are you sure you want to delete volume "{cv.name}"?',
+                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            # Remove from project
+            self.volumes_table.model().beginResetModel()
+            
+            # Clear current volume if it's the one being deleted
+            if pv.cur_volume == cv:
+                self.setVolume(None)
+                
+            # Clear any overlays using this volume
+            for i, ovv in enumerate(pv.overlay_volume_views):
+                if ovv is not None and ovv.volume == cv:
+                    self.setOverlay(i, None)
+                    
+            pv.project.removeVolume(cv)
+            self.volumes_table.model().endResetModel()
 
     def deleteActiveFragment(self):
         pv = self.project_view
@@ -3396,3 +3430,15 @@ class DeleteActiveFragmentButton(QPushButton):
 
     def onButtonClicked(self):
         self.main_window.deleteActiveFragment()
+
+class DeleteActiveVolumeButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(DeleteActiveVolumeButton, self).__init__("Delete Volume", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.clicked.connect(self.onButtonClicked)
+        self.setToolTip("Delete the currently selected volume")
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.deleteActiveVolume()

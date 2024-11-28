@@ -770,3 +770,11 @@ class Project:
                 if fragment in pv.fragments:
                     del pv.fragments[fragment]
             self.notifyModified()
+
+    def removeVolume(self, volume):
+        if volume in self.volumes:
+            self.volumes.remove(volume)
+            for pv in self.project_views:
+                if volume in pv.volumes:
+                    del pv.volumes[volume]
+            self.notifyModified()
