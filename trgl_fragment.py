@@ -333,7 +333,7 @@ class TrglFragment(BaseFragment):
             try:
                 ofj = jfilename.open("w")
                 print(info_txt, file=ofj)
-            except Excepton as e:
+            except Exception as e:
                 print("Could not open %s: %s"%(str(jfilename), e))
                 return
 

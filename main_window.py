@@ -1323,6 +1323,8 @@ class MainWindow(QMainWindow):
         hlayout.addWidget(self.reparam_frag)
         self.copy_frag = CopyActiveFragmentButton(self)
         hlayout.addWidget(self.copy_frag)
+        self.delete_frag = DeleteActiveFragmentButton(self)
+        hlayout.addWidget(self.delete_frag)
 
         '''
         self.move_frag_up = MoveActiveFragmentAlongZButton(self, "Z ↑", -1)
@@ -1828,6 +1830,7 @@ class MainWindow(QMainWindow):
         self.copy_frag.setEnabled(active)
         self.reparam_frag.setEnabled(active)
         self.retriang_frag.setEnabled(active)
+        self.delete_frag.setEnabled(active)
         '''
         self.move_frag_up.setEnabled(active)
         self.move_frag_down.setEnabled(active)
@@ -1864,6 +1867,32 @@ class MainWindow(QMainWindow):
         # mf = mfv.fragment
         mfv.moveAlongNormals(step)
         self.drawSlices()
+
+    def deleteActiveFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot delete fragment without project")
+            return
+        
+        mfv = pv.mainActiveFragmentView(unaligned_ok=True)
+        if mfv is None:
+            print("No currently active fragment")
+            return
+        
+        mf = mfv.fragment
+        
+        # Show confirmation dialog
+        reply = QMessageBox.question(self, 'Delete Fragment',
+                                   f'Are you sure you want to delete fragment "{mf.name}"?',
+                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            # Remove from project
+            self.fragments_table.model().beginResetModel()
+            pv.project.removeFragment(mf)
+            self.setFragments()
+            self.fragments_table.model().endResetModel()
+            self.enableWidgetsIfActiveFragment()
 
     def copyActiveFragment(self):
         pv = self.project_view
@@ -3355,3 +3384,15 @@ class MainWindow(QMainWindow):
         if has_data:
             self.zarr_signal.emit(key)
 
+
+class DeleteActiveFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(DeleteActiveFragmentButton, self).__init__("Delete Fragment", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.clicked.connect(self.onButtonClicked)
+        self.setToolTip("Delete the currently active fragment")
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.deleteActiveFragment()
