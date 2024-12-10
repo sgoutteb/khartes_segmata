@@ -48,6 +48,7 @@ from data_window import DataWindow, SurfaceWindow
 from project import Project, ProjectView
 from fragment import Fragment, FragmentsModel, FragmentView
 from trgl_fragment import TrglFragment, TrglFragmentView
+from umbilicus_fragment import UmbilicusFragment, UmbilicusFragmentView
 from base_fragment import BaseFragment, BaseFragmentView
 from volume import (
         Volume, VolumesModel, 
@@ -327,7 +328,7 @@ class ZInterpolationSetter(QWidget):
 
 class CreateFragmentButton(QPushButton):
     def __init__(self, main_window, parent=None):
-        super(CreateFragmentButton, self).__init__("Start New Fragment", parent)
+        super(CreateFragmentButton, self).__init__("New 3D Fragment", parent)
         self.main_window = main_window
         self.setToolTip("Once the new fragment is created use\nshift plus left mouse button to create new nodes")
         self.clicked.connect(self.onButtonClicked)
@@ -1309,6 +1310,15 @@ class MainWindow(QMainWindow):
         # print("dark mode", self.isDarkMode())
         create_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
         hlayout.addWidget(create_frag)
+
+        create_25d_frag = Create25DFragmentButton(self)
+        create_25d_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
+        hlayout.addWidget(create_25d_frag)
+
+        create_umbilicus_frag = CreateUmbilicusFragmentButton(self)
+        create_umbilicus_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
+        hlayout.addWidget(create_umbilicus_frag)
+
         label = QLabel("Active fragment:")
         # label.setStyleSheet("QLabel { background-color : beige; padding-left: 5}")
         label.setStyleSheet("QLabel { padding-left: 5}")
@@ -1912,6 +1922,75 @@ class MainWindow(QMainWindow):
             self.volumes_table.model().endResetModel()
             pv.project.notifyModified()
 
+    def create25DFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot create new fragment without project")
+            return
+        vv = self.volumeView()
+        if vv is None:
+            print("Warning, cannot create new fragment without volume view set")
+            return
+
+        stem = "frag25d"
+        name = self.uniqueFragmentName(stem)
+        if name is None:
+            print("Can't create unique fragment name from stem", stem)
+            return
+
+        frag = Fragment(name, vv.direction)  # Using regular Fragment class but with 2.5D flag
+        frag.setColor(Utils.getNextColor(), no_notify=True)
+        frag.valid = True
+        frag.is_25d = True  # Special flag to identify 2.5D fragments
+        print("created 2.5D fragment %s"%frag.name)
+        
+        self.fragments_table.model().beginResetModel()
+        pv.project.addFragment(frag)
+        self.setFragments()
+        self.fragments_table.model().endResetModel()
+        
+        exclusive = (len(pv.activeFragmentViews(unaligned_ok=True)) == 1)
+        self.setFragmentActive(frag, True, exclusive)
+        self.enableWidgetsIfActiveFragment()
+        
+        self.app.processEvents()
+        index = pv.project.fragments.index(frag)
+        self.fragments_table.model().scrollToRow(index)
+
+    def createUmbilicusFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot create new fragment without project")
+            return
+        vv = self.volumeView()
+        if vv is None:
+            print("Warning, cannot create new fragment without volume view set")
+            return
+
+        stem = "umbilicus"
+        name = self.uniqueFragmentName(stem)
+        if name is None:
+            print("Can't create unique fragment name from stem", stem)
+            return
+
+        frag = UmbilicusFragment(name, vv.direction)
+        frag.setColor(Utils.getNextColor(), no_notify=True)
+        frag.valid = True
+        print("created umbilicus fragment %s"%frag.name)
+        
+        self.fragments_table.model().beginResetModel()
+        pv.project.addFragment(frag)
+        self.setFragments()
+        self.fragments_table.model().endResetModel()
+        
+        exclusive = (len(pv.activeFragmentViews(unaligned_ok=True)) == 1)
+        self.setFragmentActive(frag, True, exclusive)
+        self.enableWidgetsIfActiveFragment()
+        
+        self.app.processEvents()
+        index = pv.project.fragments.index(frag)
+        self.fragments_table.model().scrollToRow(index)
+
     def deleteActiveFragment(self):
         pv = self.project_view
         if pv is None:
@@ -2045,28 +2124,22 @@ class MainWindow(QMainWindow):
         if name is None:
             print("Can't create unique fragment name from stem", stem)
             return
-        # print("color",color)
-        # frag = Fragment(name, vv.direction)
+
+        # Using TrglFragment for 3D fragments
         frag = TrglFragment(name)
         frag.setColor(Utils.getNextColor(), no_notify=True)
         frag.valid = True
-        print("created fragment %s"%frag.name)
+        print("created 3D fragment %s"%frag.name)
+        
         self.fragments_table.model().beginResetModel()
-        # print("start cafv")
-        # if len(pv.activeFragmentViews(unaligned_ok=True)) == 1:
-        #     pv.clearActiveFragmentViews()
-        # print("end cafv")
         pv.project.addFragment(frag)
         self.setFragments()
         self.fragments_table.model().endResetModel()
-        # fv = pv.fragments[frag]
-        # fv.active = True
-        # self.export_mesh_action.setEnabled(len(pv.activeFragmentViews(unaligned_ok=True)) > 0)
+        
         exclusive = (len(pv.activeFragmentViews(unaligned_ok=True)) == 1)
         self.setFragmentActive(frag, True, exclusive)
         self.enableWidgetsIfActiveFragment()
-        # need to make sure new fragment is added to table
-        # before calling scrollToRow
+        
         self.app.processEvents()
         index = pv.project.fragments.index(frag)
         self.fragments_table.model().scrollToRow(index)
@@ -3485,3 +3558,27 @@ class DeleteActiveVolumeButton(QPushButton):
 
     def onButtonClicked(self):
         self.main_window.deleteActiveVolume()
+
+class Create25DFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(Create25DFragmentButton, self).__init__("New 2.5D Fragment", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setToolTip("Create a new 2.5D fragment for working with flat surfaces")
+        self.clicked.connect(self.onButtonClicked)
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.create25DFragment()
+
+class CreateUmbilicusFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(CreateUmbilicusFragmentButton, self).__init__("New Umbilicus", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setToolTip("Create a new umbilicus fragment for tracing scroll centers")
+        self.clicked.connect(self.onButtonClicked)
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.createUmbilicusFragment()

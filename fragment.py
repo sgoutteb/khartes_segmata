@@ -38,6 +38,7 @@ class FragmentsModel(QtCore.QAbstractTableModel):
             "Hide\nMesh",
             "Name",
             "Color",
+            "Type",  # Add new column
             "Dir",
             "Pts",
             "cm^2"
@@ -49,6 +50,7 @@ class FragmentsModel(QtCore.QAbstractTableModel):
             "Select which fragments have their mesh hidden;\nclick box to select",
             "Name of the fragment; click to edit",
             "Color of the fragment; click to edit",
+            "Type of fragment (2.5D or 3D)",  # Add new tooltip
             "Direction (orientation) of the fragment",
             "Number of points currently in fragment",
             "Fragment area in square centimeters"
@@ -178,6 +180,14 @@ class FragmentsModel(QtCore.QAbstractTableModel):
             return len(fragment.gpoints)
         elif column == self.columnIndex("cm^2"):
             return "%.4f"%fragment_view.sqcm
+        elif column == self.columnIndex("Type"):
+            #will need to figure out how to update this is trgl and umbilicus without circular imports
+            if isinstance(fragment, Fragment):
+                return "2.5D" 
+            # elif isinstance(fragment, UmbilicusFragment):
+            #     return "U"
+            else:
+                return "3D"
         else:
             return None
 
@@ -1798,7 +1808,8 @@ class FragmentView(BaseFragmentView):
 
     def trgls(self):
         if self.tri is None:
-            return None
+            # Return empty array instead of None for new fragments
+            return np.zeros((0,3), dtype=np.int32)
         return self.tri.simplices
 
     # return True if succeeds, False if fails
