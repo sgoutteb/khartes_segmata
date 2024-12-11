@@ -762,3 +762,21 @@ class Project:
             if v.is_streaming:
                 return True
         return False
+
+    def removeFragment(self, fragment):
+        if fragment in self.fragments:
+            print("removing fragment", fragment.name, fragment.created)
+            print(fragment)
+            self.fragments.remove(fragment)
+            for pv in self.project_views:
+                if fragment in pv.fragments:
+                    del pv.fragments[fragment]
+            self.notifyModified()
+
+    def removeVolume(self, volume):
+        if volume in self.volumes:
+            self.volumes.remove(volume)
+            for pv in self.project_views:
+                if volume in pv.volumes:
+                    del pv.volumes[volume]
+            self.notifyModified()

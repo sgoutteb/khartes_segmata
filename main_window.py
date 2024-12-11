@@ -1324,6 +1324,8 @@ class MainWindow(QMainWindow):
         hlayout.addWidget(self.reparam_frag)
         self.copy_frag = CopyActiveFragmentButton(self)
         hlayout.addWidget(self.copy_frag)
+        self.delete_frag = DeleteActiveFragmentButton(self)
+        hlayout.addWidget(self.delete_frag)
 
         '''
         self.move_frag_up = MoveActiveFragmentAlongZButton(self, "Z ↑", -1)
@@ -1477,6 +1479,8 @@ class MainWindow(QMainWindow):
         vbv.setStyleSheet("QCheckBox { %s; padding: 5; }"%self.highlightedBackgroundStyle())
         # vbv.setPalette(palette)
         hlayout.addWidget(vbv)
+        self.delete_vol = DeleteActiveVolumeButton(self)
+        hlayout.addWidget(self.delete_vol)
         hlayout.addStretch()
         vlayout.addLayout(hlayout)
         self.volumes_table = QTableView()
@@ -1837,6 +1841,7 @@ class MainWindow(QMainWindow):
         self.copy_frag.setEnabled(active)
         self.reparam_frag.setEnabled(active)
         self.retriang_frag.setEnabled(active)
+        self.delete_frag.setEnabled(active)
         '''
         self.move_frag_up.setEnabled(active)
         self.move_frag_down.setEnabled(active)
@@ -1873,6 +1878,107 @@ class MainWindow(QMainWindow):
         # mf = mfv.fragment
         mfv.moveAlongNormals(step)
         self.drawSlices()
+
+    def deleteActiveVolume(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot delete volume without project")
+            return
+        
+        cv = pv.cur_volume
+        if cv is None:
+            print("No currently selected volume")
+            return
+            
+        # Show confirmation dialog
+        reply = QMessageBox.question(self, 'Delete Volume',
+                               f'Are you sure you want to remove volume "{cv.name}" from the project?',
+                               QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.volumes_table.model().beginResetModel()
+            
+            # Clear current volume if it's the one being deleted
+            if pv.cur_volume == cv:
+                self.setVolume(None)
+                
+            # Clear any overlays using this volume
+            for i, ovv in enumerate(pv.overlay_volume_views):
+                if ovv is not None and ovv.volume == cv:
+                    self.setOverlay(i, None)
+        
+            # Remove the .volzarr file from the project's volumes directory
+            
+            volzarr_file = pv.project.volumes_path / (cv.name + '.volzarr')
+            print("volzarr_file", volzarr_file)
+            try:
+                if volzarr_file.exists():
+                    volzarr_file.unlink()
+            except Exception as e:
+                print(f"Warning: Failed to remove volzarr file {volzarr_file}: {e}")
+                    
+            pv.project.removeVolume(cv)
+            self.volumes_table.model().endResetModel()
+            pv.project.notifyModified()
+
+    def deleteActiveFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot delete fragment without project")
+            return
+        
+        mfv = pv.mainActiveFragmentView(unaligned_ok=True)
+        if mfv is None:
+            print("No currently active fragment")
+            return
+        
+        mf = mfv.fragment
+        
+        # Show confirmation dialog
+        reply = QMessageBox.question(self, 'Delete Fragment',
+                                   f'Are you sure you want to delete fragment "{mf.name}"?',
+                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            # Find and delete the fragment's files from the project's fragments directory
+            # The files are named with the fragment's creation timestamp
+            timestamp = mf.created.replace('-','').replace('T','').replace(':','').replace('.','').replace('Z','')[:14]
+            print("timestamp", timestamp)
+            print("fragments_path", pv.project.fragments_path)
+            fragment_base = os.path.join(os.path.dirname(pv.project.fragments_path), pv.project.fragments_path.name, timestamp)
+            obj_file = fragment_base + '.obj'
+            mtl_file = fragment_base + '.mtl'
+            
+            # Comment out deleting fragments from previous versions for better recovery of files
+            # Also check for _prev and _prev_2 versions
+            # prev_base = os.path.join(os.path.dirname(pv.project.fragments_path), pv.project.fragments_path.name + "_prev", timestamp) 
+            # prev2_base = os.path.join(os.path.dirname(pv.project.fragments_path), pv.project.fragments_path.name + "_prev_2", timestamp)
+            # obj_prev = prev_base + '.obj'
+            # mtl_prev = prev_base + '.mtl'
+            # obj_prev2 = prev2_base + '.obj'
+            # mtl_prev2 = prev2_base + '.mtl'
+            
+            files_to_delete = [
+                obj_file, mtl_file,
+                # obj_prev, mtl_prev,
+                # obj_prev2, mtl_prev2
+            ]
+            print("files_to_delete", files_to_delete)
+            
+            for file_path in files_to_delete:
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        print(f"Deleted fragment file: {file_path}")
+                except Exception as e:
+                    print(f"Warning: Failed to remove fragment file {file_path}: {e}")
+            # /Users/jamesdarby/Documents/VesuviusScroll/GP/khartes/khartes_project/overlay_testing.khprj/fragments/20241128120938.obj
+            # /Users/jamesdarby/Documents/VesuviusScroll/GP/khartes/khartes_project/overlay_testing.khprj/fragments/20241128120938.obj
+            # Remove from project
+            pv.project.removeFragment(mf)
+            self.setFragments()
+            self.fragments_table.model().endResetModel()
+            self.enableWidgetsIfActiveFragment()
 
     def copyActiveFragment(self):
         pv = self.project_view
@@ -3372,3 +3478,27 @@ class MainWindow(QMainWindow):
         if has_data:
             self.zarr_signal.emit(key)
 
+
+class DeleteActiveFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(DeleteActiveFragmentButton, self).__init__("Delete Fragment", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.clicked.connect(self.onButtonClicked)
+        self.setToolTip("Delete the currently active fragment")
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.deleteActiveFragment()
+
+class DeleteActiveVolumeButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(DeleteActiveVolumeButton, self).__init__("Delete Volume", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.clicked.connect(self.onButtonClicked)
+        self.setToolTip("Delete the currently selected volume")
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.deleteActiveVolume()
