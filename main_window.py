@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
         QStatusBar, QStyle, QStyledItemDelegate,
         QTableView, QTabWidget, QTextEdit, QToolBar,
         QVBoxLayout, 
-        QWidget, 
+        QWidget, QRadioButton
         )
 from PyQt5.QtCore import (
         QAbstractTableModel, QCoreApplication, QObject,
@@ -1080,6 +1080,10 @@ class MainWindow(QMainWindow):
         self.import_obj_action.triggered.connect(self.onImportObjButtonClick)
         self.import_obj_action.setEnabled(False)
 
+        self.import_umbilicus_action = QAction("Import Umbilicus files...", self)
+        self.import_umbilicus_action.triggered.connect(self.onImportUmbilicusButtonClick)
+        self.import_umbilicus_action.setEnabled(False)
+
         self.import_nrrd_action = QAction("Import NRRD files...", self)
         self.import_nrrd_action.triggered.connect(self.onImportNRRDButtonClick)
         self.import_nrrd_action.setEnabled(False)
@@ -1121,6 +1125,7 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.save_project_action)
         self.file_menu.addAction(self.save_project_as_action)
         self.file_menu.addAction(self.import_obj_action)
+        self.file_menu.addAction(self.import_umbilicus_action)
         self.file_menu.addAction(self.import_nrrd_action)
         self.file_menu.addAction(self.import_ppm_action)
         self.file_menu.addAction(self.import_tiffs_action)
@@ -2714,6 +2719,80 @@ class MainWindow(QMainWindow):
         parent = path.parent
         self.settingsSaveDirectory(str(parent), "ppm_")
 
+    def onImportUmbilicusButtonClick(self, s):
+        """Import an umbilicus file (.obj or .txt) and create a new umbilicus fragment"""
+        if not self.project_view:
+            return
+            
+        # Get file path from user
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, 'Import Umbilicus File',
+            '', 'Umbilicus Files (*.obj *.txt)')
+            
+        if not filepath:
+            return
+            
+        # Create format selection dialog
+        format_dialog = QDialog(self)
+        format_dialog.setWindowTitle("Select Coordinate Format")
+        layout = QVBoxLayout()
+        
+        # Add radio buttons for format selection
+        xyz_radio = QRadioButton("X,Y,Z Format")
+        zyx_radio = QRadioButton("Z,Y,X Format")
+        xyz_radio.setChecked(True)  # Default to X,Y,Z
+        
+        layout.addWidget(xyz_radio)
+        layout.addWidget(zyx_radio)
+        
+        # Add OK/Cancel buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(format_dialog.accept)
+        button_box.rejected.connect(format_dialog.reject)
+        layout.addWidget(button_box)
+        
+        format_dialog.setLayout(layout)
+        
+        # Show dialog and get result
+        if format_dialog.exec_() != QDialog.Accepted:
+            return
+            
+        try:
+            # Load points from file
+            points = self.load_umbilicus_from_file(filepath)
+            
+            if len(points) < 2:
+                QMessageBox.warning(self, 'Import Error', 
+                    'File must contain at least 2 points')
+                return
+            
+            # Transform coordinates if needed
+            if zyx_radio.isChecked():
+                # Convert from Z,Y,X to X,Y,Z format
+                points = points[:, [2, 1, 0]]  # Reorder columns
+                
+            # Create new umbilicus fragment
+            basename = os.path.splitext(os.path.basename(filepath))[0]
+            fragment = UmbilicusFragment(basename, direction=1)
+            
+            # Set points in global coordinates
+            fragment.gpoints = points
+            
+            # Add fragment to project
+            pv = self.project_view
+            proj = pv.project
+            proj.addFragment(fragment)
+            pv.updateFragmentViews()
+            self.fragments_table.model().endResetModel()
+            
+            # Update display
+            pv.notifyModified()
+            
+        except Exception as e:
+            QMessageBox.warning(self, 'Import Error', str(e))
+
     def onImportObjButtonClick(self, s):
         print("import obj clicked")
         if self.project_view is None or self.project_view.project is None:
@@ -2768,6 +2847,35 @@ class MainWindow(QMainWindow):
         pv.updateFragmentViews()
         self.fragments_table.model().endResetModel()
 
+    def load_umbilicus_from_file(self, filepath):
+        """Load umbilicus points from either .obj or .txt file"""
+        if filepath.endswith('.obj'):
+            return self.load_umbilicus_from_obj(filepath)
+        elif filepath.endswith('.txt'):
+            return self.load_umbilicus_from_txt(filepath)
+        else:
+            raise ValueError("Unsupported file format. Must be .obj or .txt")
+
+    def load_umbilicus_from_obj(self, filepath):
+        """Load points from .obj file, using only vertex positions"""
+        points = []
+        with open(filepath, 'r') as f:
+            for line in f:
+                if line.startswith('v '):  # vertex line
+                    coords = line.split()[1:4]  # get x,y,z coordinates
+                    points.append([float(x) for x in coords])
+        return np.array(points)
+
+    def load_umbilicus_from_txt(self, filepath):
+        """Load points from .txt file with comma-separated x,y,z values"""
+        points = []
+        with open(filepath, 'r') as f:
+            for line in f:
+                coords = line.strip().split(',')
+                if len(coords) >= 3:  # ensure we have x,y,z
+                    points.append([float(x) for x in coords[:3]])
+        return np.array(points)
+
     def loadObjFile(self, fname):
         trgl_frags = TrglFragment.load(fname)
         if trgl_frags is None or len(trgl_frags) == 0:
@@ -2815,6 +2923,13 @@ class MainWindow(QMainWindow):
         if len(frags) == 0:
             print("No active fragment")
             return
+            
+        # Handle umbilicus fragments differently
+        if frags[0].type == Fragment.Type.UMBILICUS:
+            self.exportUmbilicusFragment(frags[0], fvs[0])
+            return
+            
+        # Regular mesh export for other fragment types
         sdir = self.settingsGetDirectory("mesh_")
         if sdir is None:
             sdir = self.settingsGetDirectory()
@@ -2870,6 +2985,87 @@ class MainWindow(QMainWindow):
             msg.exec()
 
         self.settingsSaveDirectory(str(pname.parent), "mesh_")
+        
+    def exportUmbilicusFragment(self, fragment, fragment_view):
+        """Export umbilicus fragment as .txt or .obj file"""
+        # Create format selection dialog
+        format_dialog = QDialog(self)
+        format_dialog.setWindowTitle("Export Umbilicus Format")
+        layout = QVBoxLayout()
+        
+        # Add radio buttons for coordinate and file format selection
+        coord_group = QGroupBox("Coordinate Format")
+        coord_layout = QVBoxLayout()
+        xyz_radio = QRadioButton("X,Y,Z Format")
+        zyx_radio = QRadioButton("Z,Y,X Format")
+        xyz_radio.setChecked(True)
+        coord_layout.addWidget(xyz_radio)
+        coord_layout.addWidget(zyx_radio)
+        coord_group.setLayout(coord_layout)
+        
+        file_group = QGroupBox("File Format")
+        file_layout = QVBoxLayout()
+        txt_radio = QRadioButton(".txt (comma-separated points)")
+        obj_radio = QRadioButton(".obj (vertices and lines)")
+        txt_radio.setChecked(True)
+        file_layout.addWidget(txt_radio)
+        file_layout.addWidget(obj_radio)
+        file_group.setLayout(file_layout)
+        
+        layout.addWidget(coord_group)
+        layout.addWidget(file_group)
+        
+        # Add OK/Cancel buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(format_dialog.accept)
+        button_box.rejected.connect(format_dialog.reject)
+        layout.addWidget(button_box)
+        
+        format_dialog.setLayout(layout)
+        
+        # Show dialog and get result
+        if format_dialog.exec_() != QDialog.Accepted:
+            return
+            
+        # Get file path from user
+        file_filter = "Text Files (*.txt)" if txt_radio.isChecked() else "OBJ Files (*.obj)"
+        filename_tuple = QFileDialog.getSaveFileName(self, "Export Umbilicus", "", file_filter)
+        if filename_tuple[0] == "":
+            return
+            
+        try:
+            # Get manual points (already sorted by Z)
+            points = fragment_view.manual_points
+            if points is None or len(points) < 2:
+                raise ValueError("No manual points found to export")
+            
+            # Transform coordinates if needed
+            if zyx_radio.isChecked():
+                points = points[:, [2, 1, 0]]  # Convert X,Y,Z to Z,Y,X
+                
+            # Export based on selected format
+            filepath = filename_tuple[0]
+            if txt_radio.isChecked():
+                # Export as comma-separated values
+                with open(filepath, 'w') as f:
+                    for point in points:
+                        f.write(f"{point[0]},{point[1]},{point[2]}\n")
+            else:
+                # Export as OBJ with vertices and lines
+                with open(filepath, 'w') as f:
+                    # Write vertices
+                    for point in points:
+                        f.write(f"v {point[0]} {point[1]} {point[2]}\n")
+                    # Write lines connecting consecutive points
+                    for i in range(len(points)-1):
+                        f.write(f"l {i+1} {i+2}\n")
+                        
+            QMessageBox.information(self, "Export Complete", "Umbilicus manual points exported successfully.")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", str(e))
 
     def onImportTiffsButtonClick(self, s):
         self.tiff_loader.show()
@@ -3390,6 +3586,7 @@ class MainWindow(QMainWindow):
         self.import_nrrd_action.setEnabled(True)
         self.import_ppm_action.setEnabled(True)
         self.import_obj_action.setEnabled(True)
+        self.import_umbilicus_action.setEnabled(True)
         self.import_tiffs_action.setEnabled(True)
         self.attach_zarr_action.setEnabled(True)
         self.attach_stream_action.setEnabled(True)
