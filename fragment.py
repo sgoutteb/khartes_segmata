@@ -181,13 +181,7 @@ class FragmentsModel(QtCore.QAbstractTableModel):
         elif column == self.columnIndex("cm^2"):
             return "%.4f"%fragment_view.sqcm
         elif column == self.columnIndex("Type"):
-            #will need to figure out how to update this is trgl and umbilicus without circular imports
-            if isinstance(fragment, Fragment):
-                return "2.5D" 
-            # elif isinstance(fragment, UmbilicusFragment):
-            #     return "U"
-            else:
-                return "3D"
+            return fragment.getType()
         else:
             return None
 
@@ -257,6 +251,7 @@ class Fragment(BaseFragment):
 
         # History of gpoints, for undo functionality
         self.gpoints_history : LifoQueue = LifoQueue(100)
+        self.type = BaseFragment.Type.FRAGMENT
 
     def createView(self, project_view):
         return FragmentView(project_view, self)
