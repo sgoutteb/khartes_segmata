@@ -838,6 +838,53 @@ class ApplyOpacityCheckBox(QCheckBox):
     def updateValue(self, value):
         self.setChecked(value)
 
+class DeleteActiveFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(DeleteActiveFragmentButton, self).__init__("Delete Fragment", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.clicked.connect(self.onButtonClicked)
+        self.setToolTip("Delete the currently active fragment")
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.deleteActiveFragment()
+
+class DeleteActiveVolumeButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(DeleteActiveVolumeButton, self).__init__("Delete Volume", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.clicked.connect(self.onButtonClicked)
+        self.setToolTip("Delete the currently selected volume")
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.deleteActiveVolume()
+
+class Create25DFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(Create25DFragmentButton, self).__init__("New 2.5D Fragment", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setToolTip("Create a new 2.5D fragment for working with flat surfaces")
+        self.clicked.connect(self.onButtonClicked)
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.create25DFragment()
+
+class CreateUmbilicusFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(CreateUmbilicusFragmentButton, self).__init__("New Umbilicus", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setToolTip("Create a new umbilicus fragment for tracing scroll centers")
+        self.clicked.connect(self.onButtonClicked)
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.createUmbilicusFragment()
 
     '''
     # class function
@@ -856,7 +903,6 @@ class ApplyOpacityCheckBox(QCheckBox):
         sb.singleStep = 0.1
         return sb
     '''
-
 
 class MainWindow(QMainWindow):
 
@@ -1918,6 +1964,9 @@ class MainWindow(QMainWindow):
                 if ovv is not None and ovv.volume == cv:
                     self.setOverlay(i, None)
         
+            # TODO: move to project.py; don't delete until
+            # project saved; delete .nrrd file if appropriate
+            '''
             # Remove the .volzarr file from the project's volumes directory
             
             volzarr_file = pv.project.volumes_path / (cv.name + '.volzarr')
@@ -1927,6 +1976,7 @@ class MainWindow(QMainWindow):
                     volzarr_file.unlink()
             except Exception as e:
                 print(f"Warning: Failed to remove volzarr file {volzarr_file}: {e}")
+            '''
                     
             pv.project.removeVolume(cv)
             self.volumes_table.model().endResetModel()
@@ -2020,6 +2070,11 @@ class MainWindow(QMainWindow):
                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
+            # This code isn't needed.  When the project is saved,
+            # the deleted fragment will not be saved; this is the
+            # desired behavior.  Deleting the volume, however,
+            # is more complicated...
+            '''
             # Find and delete the fragment's files from the project's fragments directory
             # The files are named with the fragment's creation timestamp
             timestamp = mf.created.replace('-','').replace('T','').replace(':','').replace('.','').replace('Z','')[:14]
@@ -2054,6 +2109,7 @@ class MainWindow(QMainWindow):
                     print(f"Warning: Failed to remove fragment file {file_path}: {e}")
             # /Users/jamesdarby/Documents/VesuviusScroll/GP/khartes/khartes_project/overlay_testing.khprj/fragments/20241128120938.obj
             # /Users/jamesdarby/Documents/VesuviusScroll/GP/khartes/khartes_project/overlay_testing.khprj/fragments/20241128120938.obj
+            '''
             # Remove from project
             pv.project.removeFragment(mf)
             self.setFragments()
@@ -3552,51 +3608,3 @@ class MainWindow(QMainWindow):
         if has_data:
             self.zarr_signal.emit(key)
 
-
-class DeleteActiveFragmentButton(QPushButton):
-    def __init__(self, main_window, parent=None):
-        super(DeleteActiveFragmentButton, self).__init__("Delete Fragment", parent)
-        self.main_window = main_window
-        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
-        self.clicked.connect(self.onButtonClicked)
-        self.setToolTip("Delete the currently active fragment")
-        self.setEnabled(True)
-
-    def onButtonClicked(self):
-        self.main_window.deleteActiveFragment()
-
-class DeleteActiveVolumeButton(QPushButton):
-    def __init__(self, main_window, parent=None):
-        super(DeleteActiveVolumeButton, self).__init__("Delete Volume", parent)
-        self.main_window = main_window
-        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
-        self.clicked.connect(self.onButtonClicked)
-        self.setToolTip("Delete the currently selected volume")
-        self.setEnabled(True)
-
-    def onButtonClicked(self):
-        self.main_window.deleteActiveVolume()
-
-class Create25DFragmentButton(QPushButton):
-    def __init__(self, main_window, parent=None):
-        super(Create25DFragmentButton, self).__init__("New 2.5D Fragment", parent)
-        self.main_window = main_window
-        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
-        self.setToolTip("Create a new 2.5D fragment for working with flat surfaces")
-        self.clicked.connect(self.onButtonClicked)
-        self.setEnabled(True)
-
-    def onButtonClicked(self):
-        self.main_window.create25DFragment()
-
-class CreateUmbilicusFragmentButton(QPushButton):
-    def __init__(self, main_window, parent=None):
-        super(CreateUmbilicusFragmentButton, self).__init__("New Umbilicus", parent)
-        self.main_window = main_window
-        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
-        self.setToolTip("Create a new umbilicus fragment for tracing scroll centers")
-        self.clicked.connect(self.onButtonClicked)
-        self.setEnabled(True)
-
-    def onButtonClicked(self):
-        self.main_window.createUmbilicusFragment()
