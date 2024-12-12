@@ -1,12 +1,22 @@
 from fragment import Fragment, FragmentView
 import numpy as np
 
+from PyQt5.QtWidgets import (
+        QDialog, QDialogButtonBox,
+        QFileDialog, 
+        QGroupBox,
+        QMessageBox,
+        QVBoxLayout, 
+        QRadioButton
+        )
+
+
 class UmbilicusFragment(Fragment):
     def __init__(self, name, direction):
         super(UmbilicusFragment, self).__init__(name, direction)
         self.is_umbilicus = True # Flag to identify umbilicus fragments
         self.type = Fragment.Type.UMBILICUS
-        
+
     def createView(self, project_view):
         return UmbilicusFragmentView(project_view, self)
         
@@ -24,6 +34,38 @@ class UmbilicusFragment(Fragment):
     def badTrglsByNormal(self, tri, pts):
         # Override to do nothing since we don't use triangulation
         return []
+    
+    @staticmethod
+    def load_umbilicus_from_file(filepath):
+        """Load umbilicus points from either .obj or .txt file"""
+        if filepath.endswith('.obj'):
+            return UmbilicusFragment.load_umbilicus_from_obj(filepath)
+        elif filepath.endswith('.txt'):
+            return UmbilicusFragment.load_umbilicus_from_txt(filepath)
+        else:
+            raise ValueError("Unsupported file format. Must be .obj or .txt")
+
+    @staticmethod
+    def load_umbilicus_from_obj(filepath):
+        """Load points from .obj file, using only vertex positions"""
+        points = []
+        with open(filepath, 'r') as f:
+            for line in f:
+                if line.startswith('v '):  # vertex line
+                    coords = line.split()[1:4]  # get x,y,z coordinates
+                    points.append([float(x) for x in coords])
+        return np.array(points)
+
+    @staticmethod
+    def load_umbilicus_from_txt(filepath):
+        """Load points from .txt file with comma-separated x,y,z values"""
+        points = []
+        with open(filepath, 'r') as f:
+            for line in f:
+                coords = line.strip().split(',')
+                if len(coords) >= 3:  # ensure we have x,y,z
+                    points.append([float(x) for x in coords[:3]])
+        return np.array(points)
 
 class UmbilicusFragmentView(FragmentView):
     def __init__(self, project_view, fragment):
@@ -241,3 +283,97 @@ class UmbilicusFragmentView(FragmentView):
             
             self.fragment.notifyModified()
             self.setLocalPoints(True, False)
+
+class UmbilicusExporter:
+    """Handles exporting of umbilicus fragments to various file formats"""
+    
+    def __init__(self, parent_window):
+        self.parent = parent_window
+        
+    def export_fragment(self, fragment, fragment_view):
+        """Main export function that handles the export dialog and file saving"""
+        # Create format selection dialog
+        format_dialog = QDialog(self.parent)
+        format_dialog.setWindowTitle("Export Umbilicus Format")
+        layout = QVBoxLayout()
+        
+        # Add radio buttons for coordinate and file format selection
+        coord_group = QGroupBox("Coordinate Format")
+        coord_layout = QVBoxLayout()
+        xyz_radio = QRadioButton("X,Y,Z Format")
+        zyx_radio = QRadioButton("Z,Y,X Format")
+        xyz_radio.setChecked(True)
+        coord_layout.addWidget(xyz_radio)
+        coord_layout.addWidget(zyx_radio)
+        coord_group.setLayout(coord_layout)
+        
+        file_group = QGroupBox("File Format")
+        file_layout = QVBoxLayout()
+        txt_radio = QRadioButton(".txt (comma-separated points)")
+        obj_radio = QRadioButton(".obj (vertices and lines)")
+        txt_radio.setChecked(True)
+        file_layout.addWidget(txt_radio)
+        file_layout.addWidget(obj_radio)
+        file_group.setLayout(file_layout)
+        
+        layout.addWidget(coord_group)
+        layout.addWidget(file_group)
+        
+        # Add OK/Cancel buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(format_dialog.accept)
+        button_box.rejected.connect(format_dialog.reject)
+        layout.addWidget(button_box)
+        
+        format_dialog.setLayout(layout)
+        
+        # Show dialog and get result
+        if format_dialog.exec_() != QDialog.Accepted:
+            return
+            
+        # Get file path from user
+        file_filter = "Text Files (*.txt)" if txt_radio.isChecked() else "OBJ Files (*.obj)"
+        filename_tuple = QFileDialog.getSaveFileName(self.parent, "Export Umbilicus", "", file_filter)
+        if filename_tuple[0] == "":
+            return
+            
+        try:
+            # Get manual points (already sorted by Z)
+            points = fragment_view.manual_points
+            if points is None or len(points) < 2:
+                raise ValueError("No manual points found to export")
+            
+            # Transform coordinates if needed
+            if zyx_radio.isChecked():
+                points = points[:, [2, 1, 0]]  # Convert X,Y,Z to Z,Y,X
+                
+            # Export based on selected format
+            filepath = filename_tuple[0]
+            if txt_radio.isChecked():
+                self._export_txt(points, filepath)
+            else:
+                self._export_obj(points, filepath)
+                
+            QMessageBox.information(self.parent, "Export Complete", 
+                "Umbilicus manual points exported successfully.")
+            
+        except Exception as e:
+            QMessageBox.warning(self.parent, "Export Error", str(e))
+            
+    def _export_txt(self, points, filepath):
+        """Export points as comma-separated values"""
+        with open(filepath, 'w') as f:
+            for point in points:
+                f.write(f"{point[0]},{point[1]},{point[2]}\n")
+                
+    def _export_obj(self, points, filepath):
+        """Export points as OBJ with vertices and lines"""
+        with open(filepath, 'w') as f:
+            # Write vertices
+            for point in points:
+                f.write(f"v {point[0]} {point[1]} {point[2]}\n")
+            # Write lines connecting consecutive points
+            for i in range(len(points)-1):
+                f.write(f"l {i+1} {i+2}\n")

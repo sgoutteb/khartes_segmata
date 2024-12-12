@@ -48,7 +48,7 @@ from data_window import DataWindow, SurfaceWindow
 from project import Project, ProjectView
 from fragment import Fragment, FragmentsModel, FragmentView
 from trgl_fragment import TrglFragment, TrglFragmentView
-from umbilicus_fragment import UmbilicusFragment, UmbilicusFragmentView
+from umbilicus_fragment import UmbilicusFragment, UmbilicusExporter
 from base_fragment import BaseFragment, BaseFragmentView
 from volume import (
         Volume, VolumesModel, 
@@ -2760,8 +2760,8 @@ class MainWindow(QMainWindow):
             return
             
         try:
-            # Load points from file
-            points = self.load_umbilicus_from_file(filepath)
+            # Load points from file using UmbilicusFragment's load method
+            points = UmbilicusFragment.load_umbilicus_from_file(filepath)
             
             if len(points) < 2:
                 QMessageBox.warning(self, 'Import Error', 
@@ -2776,6 +2776,10 @@ class MainWindow(QMainWindow):
             # Create new umbilicus fragment
             basename = os.path.splitext(os.path.basename(filepath))[0]
             fragment = UmbilicusFragment(basename, direction=1)
+            
+            # Set random color like new fragments
+            fragment.setColor(Utils.getNextColor(), no_notify=True)
+            fragment.valid = True
             
             # Set points in global coordinates
             fragment.gpoints = points
@@ -2847,34 +2851,7 @@ class MainWindow(QMainWindow):
         pv.updateFragmentViews()
         self.fragments_table.model().endResetModel()
 
-    def load_umbilicus_from_file(self, filepath):
-        """Load umbilicus points from either .obj or .txt file"""
-        if filepath.endswith('.obj'):
-            return self.load_umbilicus_from_obj(filepath)
-        elif filepath.endswith('.txt'):
-            return self.load_umbilicus_from_txt(filepath)
-        else:
-            raise ValueError("Unsupported file format. Must be .obj or .txt")
-
-    def load_umbilicus_from_obj(self, filepath):
-        """Load points from .obj file, using only vertex positions"""
-        points = []
-        with open(filepath, 'r') as f:
-            for line in f:
-                if line.startswith('v '):  # vertex line
-                    coords = line.split()[1:4]  # get x,y,z coordinates
-                    points.append([float(x) for x in coords])
-        return np.array(points)
-
-    def load_umbilicus_from_txt(self, filepath):
-        """Load points from .txt file with comma-separated x,y,z values"""
-        points = []
-        with open(filepath, 'r') as f:
-            for line in f:
-                coords = line.strip().split(',')
-                if len(coords) >= 3:  # ensure we have x,y,z
-                    points.append([float(x) for x in coords[:3]])
-        return np.array(points)
+    
 
     def loadObjFile(self, fname):
         trgl_frags = TrglFragment.load(fname)
@@ -2987,85 +2964,9 @@ class MainWindow(QMainWindow):
         self.settingsSaveDirectory(str(pname.parent), "mesh_")
         
     def exportUmbilicusFragment(self, fragment, fragment_view):
-        """Export umbilicus fragment as .txt or .obj file"""
-        # Create format selection dialog
-        format_dialog = QDialog(self)
-        format_dialog.setWindowTitle("Export Umbilicus Format")
-        layout = QVBoxLayout()
-        
-        # Add radio buttons for coordinate and file format selection
-        coord_group = QGroupBox("Coordinate Format")
-        coord_layout = QVBoxLayout()
-        xyz_radio = QRadioButton("X,Y,Z Format")
-        zyx_radio = QRadioButton("Z,Y,X Format")
-        xyz_radio.setChecked(True)
-        coord_layout.addWidget(xyz_radio)
-        coord_layout.addWidget(zyx_radio)
-        coord_group.setLayout(coord_layout)
-        
-        file_group = QGroupBox("File Format")
-        file_layout = QVBoxLayout()
-        txt_radio = QRadioButton(".txt (comma-separated points)")
-        obj_radio = QRadioButton(".obj (vertices and lines)")
-        txt_radio.setChecked(True)
-        file_layout.addWidget(txt_radio)
-        file_layout.addWidget(obj_radio)
-        file_group.setLayout(file_layout)
-        
-        layout.addWidget(coord_group)
-        layout.addWidget(file_group)
-        
-        # Add OK/Cancel buttons
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
-        )
-        button_box.accepted.connect(format_dialog.accept)
-        button_box.rejected.connect(format_dialog.reject)
-        layout.addWidget(button_box)
-        
-        format_dialog.setLayout(layout)
-        
-        # Show dialog and get result
-        if format_dialog.exec_() != QDialog.Accepted:
-            return
-            
-        # Get file path from user
-        file_filter = "Text Files (*.txt)" if txt_radio.isChecked() else "OBJ Files (*.obj)"
-        filename_tuple = QFileDialog.getSaveFileName(self, "Export Umbilicus", "", file_filter)
-        if filename_tuple[0] == "":
-            return
-            
-        try:
-            # Get manual points (already sorted by Z)
-            points = fragment_view.manual_points
-            if points is None or len(points) < 2:
-                raise ValueError("No manual points found to export")
-            
-            # Transform coordinates if needed
-            if zyx_radio.isChecked():
-                points = points[:, [2, 1, 0]]  # Convert X,Y,Z to Z,Y,X
-                
-            # Export based on selected format
-            filepath = filename_tuple[0]
-            if txt_radio.isChecked():
-                # Export as comma-separated values
-                with open(filepath, 'w') as f:
-                    for point in points:
-                        f.write(f"{point[0]},{point[1]},{point[2]}\n")
-            else:
-                # Export as OBJ with vertices and lines
-                with open(filepath, 'w') as f:
-                    # Write vertices
-                    for point in points:
-                        f.write(f"v {point[0]} {point[1]} {point[2]}\n")
-                    # Write lines connecting consecutive points
-                    for i in range(len(points)-1):
-                        f.write(f"l {i+1} {i+2}\n")
-                        
-            QMessageBox.information(self, "Export Complete", "Umbilicus manual points exported successfully.")
-            
-        except Exception as e:
-            QMessageBox.warning(self, "Export Error", str(e))
+        """Export umbilicus fragment using the UmbilicusExporter"""
+        exporter = UmbilicusExporter(self)
+        exporter.export_fragment(fragment, fragment_view)
 
     def onImportTiffsButtonClick(self, s):
         self.tiff_loader.show()
