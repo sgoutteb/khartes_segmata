@@ -1748,6 +1748,8 @@ class FragmentView(BaseFragmentView):
     # stxy is ignored
     def addPoint(self, tijk, stxy):
         # ijk using volume-view's direction
+        if tijk is None: # picked point is outside of current fragment
+            return
         fijk = self.vijkToFijk(tijk)
 
         # use fijk rounded to nearest integer (note that this
@@ -1840,3 +1842,5 @@ class FragmentView(BaseFragmentView):
             self.fragment.gpoints = self.fragment.gpoints_history.get()
             self.fragment.notifyModified()
             self.setLocalPoints(True, False)
+
+

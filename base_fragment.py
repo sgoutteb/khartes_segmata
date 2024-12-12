@@ -238,7 +238,7 @@ class BaseFragmentView:
         self.map_corners = None
         self.modified = Utils.timestamp()
         self.local_points_modified = Utils.timestamp()
-        self.normal_offset = 0
+        self.normal_offset = 0.
 
     def allowAutoExtrapolation(self):
         return False

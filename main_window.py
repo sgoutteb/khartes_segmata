@@ -1363,10 +1363,9 @@ class MainWindow(QMainWindow):
         create_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
         hlayout.addWidget(create_frag)
 
-        #Causes crashes with OpenGL classes...
-        # create_25d_frag = Create25DFragmentButton(self)
-        # create_25d_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
-        # hlayout.addWidget(create_25d_frag)
+        create_25d_frag = Create25DFragmentButton(self)
+        create_25d_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
+        hlayout.addWidget(create_25d_frag)
 
         create_umbilicus_frag = CreateUmbilicusFragmentButton(self)
         create_umbilicus_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
