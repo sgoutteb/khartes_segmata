@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
         QStatusBar, QStyle, QStyledItemDelegate,
         QTableView, QTabWidget, QTextEdit, QToolBar,
         QVBoxLayout, 
-        QWidget, 
+        QWidget, QRadioButton
         )
 from PyQt5.QtCore import (
         QAbstractTableModel, QCoreApplication, QObject,
@@ -48,7 +48,7 @@ from data_window import DataWindow, SurfaceWindow
 from project import Project, ProjectView
 from fragment import Fragment, FragmentsModel, FragmentView
 from trgl_fragment import TrglFragment, TrglFragmentView
-from umbilicus_fragment import UmbilicusFragment, UmbilicusFragmentView
+from umbilicus_fragment import UmbilicusFragment, UmbilicusExporter, UmbilicusImporter
 from base_fragment import BaseFragment, BaseFragmentView
 from volume import (
         Volume, VolumesModel, 
@@ -1126,6 +1126,10 @@ class MainWindow(QMainWindow):
         self.import_obj_action.triggered.connect(self.onImportObjButtonClick)
         self.import_obj_action.setEnabled(False)
 
+        self.import_umbilicus_action = QAction("Import Umbilicus files...", self)
+        self.import_umbilicus_action.triggered.connect(self.onImportUmbilicusButtonClick)
+        self.import_umbilicus_action.setEnabled(False)
+
         self.import_nrrd_action = QAction("Import NRRD files...", self)
         self.import_nrrd_action.triggered.connect(self.onImportNRRDButtonClick)
         self.import_nrrd_action.setEnabled(False)
@@ -1167,6 +1171,7 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.save_project_action)
         self.file_menu.addAction(self.save_project_as_action)
         self.file_menu.addAction(self.import_obj_action)
+        self.file_menu.addAction(self.import_umbilicus_action)
         self.file_menu.addAction(self.import_nrrd_action)
         self.file_menu.addAction(self.import_ppm_action)
         self.file_menu.addAction(self.import_tiffs_action)
@@ -2770,6 +2775,26 @@ class MainWindow(QMainWindow):
         parent = path.parent
         self.settingsSaveDirectory(str(parent), "ppm_")
 
+    def onImportUmbilicusButtonClick(self, s):
+        """Import an umbilicus file (.obj or .txt) and create a new umbilicus fragment"""
+        if not self.project_view:
+            return
+            
+        # Use UmbilicusImporter to handle file import
+        importer = UmbilicusImporter(self)
+        fragment = importer.import_file()
+        
+        if fragment is not None:
+            # Add fragment to project
+            pv = self.project_view
+            proj = pv.project
+            proj.addFragment(fragment)
+            pv.updateFragmentViews()
+            self.fragments_table.model().endResetModel()
+            
+            # Update display
+            pv.notifyModified()
+
     def onImportObjButtonClick(self, s):
         print("import obj clicked")
         if self.project_view is None or self.project_view.project is None:
@@ -2824,6 +2849,8 @@ class MainWindow(QMainWindow):
         pv.updateFragmentViews()
         self.fragments_table.model().endResetModel()
 
+    
+
     def loadObjFile(self, fname):
         trgl_frags = TrglFragment.load(fname)
         if trgl_frags is None or len(trgl_frags) == 0:
@@ -2871,6 +2898,13 @@ class MainWindow(QMainWindow):
         if len(frags) == 0:
             print("No active fragment")
             return
+            
+        # Handle umbilicus fragments differently
+        if frags[0].type == Fragment.Type.UMBILICUS:
+            self.exportUmbilicusFragment(frags[0], fvs[0])
+            return
+            
+        # Regular mesh export for other fragment types
         sdir = self.settingsGetDirectory("mesh_")
         if sdir is None:
             sdir = self.settingsGetDirectory()
@@ -2926,6 +2960,11 @@ class MainWindow(QMainWindow):
             msg.exec()
 
         self.settingsSaveDirectory(str(pname.parent), "mesh_")
+        
+    def exportUmbilicusFragment(self, fragment, fragment_view):
+        """Export umbilicus fragment using the UmbilicusExporter"""
+        exporter = UmbilicusExporter(self)
+        exporter.export_fragment(fragment, fragment_view)
 
     def onImportTiffsButtonClick(self, s):
         self.tiff_loader.show()
@@ -3446,6 +3485,7 @@ class MainWindow(QMainWindow):
         self.import_nrrd_action.setEnabled(True)
         self.import_ppm_action.setEnabled(True)
         self.import_obj_action.setEnabled(True)
+        self.import_umbilicus_action.setEnabled(True)
         self.import_tiffs_action.setEnabled(True)
         self.attach_zarr_action.setEnabled(True)
         self.attach_stream_action.setEnabled(True)
