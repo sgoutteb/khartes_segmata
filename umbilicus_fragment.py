@@ -1,5 +1,7 @@
 from fragment import Fragment, FragmentView
 import numpy as np
+import os
+from utils import Utils
 
 from PyQt5.QtWidgets import (
         QDialog, QDialogButtonBox,
@@ -377,3 +379,77 @@ class UmbilicusExporter:
             # Write lines connecting consecutive points
             for i in range(len(points)-1):
                 f.write(f"l {i+1} {i+2}\n")
+
+class UmbilicusImporter:
+    """Handles importing of umbilicus fragments from various file formats"""
+    
+    def __init__(self, parent_window):
+        self.parent = parent_window
+        
+    def import_file(self):
+        """Main import function that handles the import dialog and file loading"""
+        # Get file path from user
+        filepath, _ = QFileDialog.getOpenFileName(
+            self.parent, 'Import Umbilicus File',
+            '', 'Umbilicus Files (*.obj *.txt)')
+            
+        if not filepath:
+            return None
+            
+        # Create format selection dialog
+        format_dialog = QDialog(self.parent)
+        format_dialog.setWindowTitle("Select Coordinate Format")
+        layout = QVBoxLayout()
+        
+        # Add radio buttons for format selection
+        xyz_radio = QRadioButton("X,Y,Z Format")
+        zyx_radio = QRadioButton("Z,Y,X Format")
+        xyz_radio.setChecked(True)  # Default to X,Y,Z
+        
+        layout.addWidget(xyz_radio)
+        layout.addWidget(zyx_radio)
+        
+        # Add OK/Cancel buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(format_dialog.accept)
+        button_box.rejected.connect(format_dialog.reject)
+        layout.addWidget(button_box)
+        
+        format_dialog.setLayout(layout)
+        
+        # Show dialog and get result
+        if format_dialog.exec_() != QDialog.Accepted:
+            return None
+            
+        try:
+            # Load points from file
+            points = UmbilicusFragment.load_umbilicus_from_file(filepath)
+            
+            if len(points) < 2:
+                QMessageBox.warning(self.parent, 'Import Error', 
+                    'File must contain at least 2 points')
+                return None
+            
+            # Transform coordinates if needed
+            if zyx_radio.isChecked():
+                # Convert from Z,Y,X to X,Y,Z format
+                points = points[:, [2, 1, 0]]  # Reorder columns
+                
+            # Create new umbilicus fragment
+            basename = os.path.splitext(os.path.basename(filepath))[0]
+            fragment = UmbilicusFragment(basename, direction=1)
+            
+            # Set random color
+            fragment.setColor(Utils.getNextColor(), no_notify=True)
+            fragment.valid = True
+            
+            # Set points in global coordinates
+            fragment.gpoints = points
+            
+            return fragment
+            
+        except Exception as e:
+            QMessageBox.warning(self.parent, 'Import Error', str(e))
+            return None
