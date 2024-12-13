@@ -271,6 +271,7 @@ class Fragment(BaseFragment):
         info['direction'] = self.direction
         info['color'] = self.color.name()
         info['params'] = self.params
+        info['type'] = self.type.value if self.type else Fragment.Type.FRAGMENT.value  # Save fragment type
         info['gpoints'] = self.gpoints.tolist()
         if self.params.get('echo', '') != '':
             info['gpoints'] = []
@@ -318,13 +319,18 @@ class Fragment(BaseFragment):
         name = info['name']
         direction = info['direction']
         gpoints = info['gpoints']
-        frag = Fragment(name, direction)
+        
+        # Create correct fragment type based on saved type
+        frag_type = info.get('type', BaseFragment.Type.FRAGMENT.value)
+        if frag_type == BaseFragment.Type.UMBILICUS.value:
+            from umbilicus_fragment import UmbilicusFragment
+            frag = UmbilicusFragment(name, direction)
+        else:
+            frag = Fragment(name, direction)
+            
         frag.setColor(color, no_notify=True)
         frag.valid = True
-        # if len(name) > 0 and name[-1] == "∴":
-        #     frag.no_mesh = True
         if len(gpoints) > 0:
-            # frag.gpoints = np.array(gpoints, dtype=np.int32)
             frag.gpoints = np.array(gpoints, dtype=np.float32)
         if 'params' in info:
             frag.params = info['params']
@@ -333,8 +339,6 @@ class Fragment(BaseFragment):
         if 'created' in info:
             frag.created = info['created']
         else:
-            # old file without "created" timestamp
-            # sleeping to make sure timestamp is unique
             time.sleep(.1)
             frag.created = Utils.timestamp()
         if 'modified' in info:
