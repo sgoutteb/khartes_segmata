@@ -297,7 +297,10 @@ class DataWindow(QLabel):
             new_tijk[self.axis] = k
             # True if successful
             # if fv.movePoint(index, new_tijk):
+            timer = Utils.Timer()
+            timer.active = False
             if self.window.movePoint(fv, index, new_tijk, update_xyz, update_st):
+                timer.time("*move point")
                 # wpos = e.localPos()
                 # wxy = (wpos.x(), wpos.y())
                 # nearbyNode = self.findNearbyNode(wxy)
@@ -307,9 +310,11 @@ class DataWindow(QLabel):
                 # wants to continue using the key to move the node even
                 # if the node moves out of "nearby" range
                 self.window.drawSlices()
+                timer.time("*draw slices")
                 # but need to keep track of current nearest
                 # node in case node numbering in window changes
                 self.updateNearbyNode()
+                timer.time("*update nearby node")
                 '''
                 old_local_nearby = self.localNearbyNodeIndex
                 pv = self.window.project_view
