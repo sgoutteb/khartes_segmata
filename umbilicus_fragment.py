@@ -207,6 +207,14 @@ class UmbilicusFragmentView(FragmentView):
         """Override to indicate all segments are working"""
         return (True, False)
 
+    def pushFragmentState(self):
+        """Override to do nothing"""
+        pass
+
+    def popFragmentState(self):
+        """Override to do nothing"""
+        pass
+
     def addPoint(self, tijk, stxy):
         """Override addPoint to handle both manual and interpolated points"""
         print("addPoint Umbilicus", tijk, stxy)

@@ -1,7 +1,8 @@
 import json
 import time
 import math
-from queue import LifoQueue
+# from queue import LifoQueue
+from collections import deque
 
 import numpy as np
 import cv2
@@ -250,7 +251,8 @@ class Fragment(BaseFragment):
         self.gpoints = np.zeros((0,3), dtype=np.float32)
 
         # History of gpoints, for undo functionality
-        self.gpoints_history : LifoQueue = LifoQueue(100)
+        # self.gpoints_history : LifoQueue = LifoQueue(50)
+        self.gpoints_history = deque(maxlen=50)
         self.type = BaseFragment.Type.FRAGMENT
 
     def createView(self, project_view):
@@ -1817,33 +1819,62 @@ class FragmentView(BaseFragmentView):
     # Note that update_xyz and update_st are ignored here;
     # st is always updated due to the call to FragmentView.setLocalPoints() 
     def movePoint(self, index, new_vijk, update_xyz, update_st):
+        # print("mp a")
         old_fijk = self.fpoints[index]
         new_fijk = self.vijkToFijk(new_vijk)
         new_matches = np.where((np.rint(self.fpoints[:, 0:2]) == np.rint(new_fijk[0:2])).all(axis=1))[0]
         if (round(old_fijk[0]) != round(new_fijk[0]) or round(old_fijk[1]) != round(new_fijk[1])) and new_matches.shape[0] > 0:
             print("movePoint point already exists at this ij", new_vijk)
             return False
+        # print("mp b")
         new_gijk = self.cur_volume_view.transposedIjkToGlobalPosition(new_vijk)
+        # print("mp b2")
         # print(self.fragment.gpoints)
         # print(match, new_gijk)
         self.pushFragmentState()
+        # print("mp c")
         self.fragment.gpoints[index, :] = new_gijk
         # print(self.fragment.gpoints)
         self.fragment.notifyModified()
         # NOTE that this will set stpoints as well as fpoints and vpoints
         self.setLocalPoints(True, False)
+        # print("mp d")
         return True
 
     def pushFragmentState(self):
         """Push the current list of gpoints onto the stack in preparation for changing gpoints."""
         gpoints_copy = np.copy(self.fragment.gpoints)
-        self.fragment.gpoints_history.put(gpoints_copy)
+        self.fragment.gpoints_history.append(gpoints_copy)
 
     def popFragmentState(self):
         """Replace current gpoints with top of the stack, and update."""
+        hist_size =  len(self.fragment.gpoints_history)
+        if hist_size > 0:
+            self.fragment.gpoints = self.fragment.gpoints_history.pop()
+            self.fragment.notifyModified()
+            self.setLocalPoints(True, False)
+
+    def pushFragmentStateOld(self):
+        """Push the current list of gpoints onto the stack in preparation for changing gpoints."""
+        # print("pfs a")
+        gpoints_copy = np.copy(self.fragment.gpoints)
+        # print("pfs b")
+        try:
+            self.fragment.gpoints_history.put(gpoints_copy, block=False)
+        except:
+            # print("pfs e")
+            self.fragment.gpoints_history.get()
+            self.fragment.gpoints_history.put(gpoints_copy, block=False)
+        # print("pfs c")
+
+    def popFragmentStateOld(self):
+        """Replace current gpoints with top of the stack, and update."""
         hist_size=  self.fragment.gpoints_history.qsize()
         if hist_size > 0:
-            self.fragment.gpoints = self.fragment.gpoints_history.get()
+            try:
+                self.fragment.gpoints = self.fragment.gpoints_history.get(block=False)
+            except:
+                return
             self.fragment.notifyModified()
             self.setLocalPoints(True, False)
 
