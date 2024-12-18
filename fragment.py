@@ -1,7 +1,8 @@
 import json
 import time
 import math
-from queue import LifoQueue
+# from queue import LifoQueue
+from collections import deque
 
 import numpy as np
 import cv2
@@ -38,45 +39,45 @@ class FragmentsModel(QtCore.QAbstractTableModel):
             "Hide\nMesh",
             "Name",
             "Color",
+            "Type",  # Add new column
             "Dir",
             "Pts",
             "cm^2"
             ]
-
+    
     ctips = [
             "Select which fragment is active;\nclick box to select.\nNote that you can only select fragments\nwhich have the same direction (orientation)\nas the current volume view",
             "Select which fragments are visible;\nclick box to select",
             "Select which fragments have their mesh hidden;\nclick box to select",
             "Name of the fragment; click to edit",
             "Color of the fragment; click to edit",
+            "Type of fragment (2.5D or 3D)",  # Add new tooltip
             "Direction (orientation) of the fragment",
             "Number of points currently in fragment",
             "Fragment area in square centimeters"
             ]
-    
+
+    # Add these static methods
+    @staticmethod
+    def columnIndex(name):
+        return FragmentsModel.columns.index(name)
+
+    @staticmethod 
+    def columnIndices(names):
+        inds = []
+        for name in names:
+            inds.append(FragmentsModel.columnIndex(name))
+        return inds
+
     def flags(self, index):
         col = index.column()
         oflags = super(FragmentsModel, self).flags(index)
-        if col == 0:
+        if col in self.columnIndices(["Active", "Visible", "Hide\nMesh"]):
             nflags = Qt.ItemNeverHasChildren
             nflags |= Qt.ItemIsUserCheckable
             nflags |= Qt.ItemIsEnabled
             return nflags
-        elif col == 1:
-            # print(col, int(oflags))
-            nflags = Qt.ItemNeverHasChildren
-            nflags |= Qt.ItemIsUserCheckable
-            nflags |= Qt.ItemIsEnabled
-            # nflags |= Qt.ItemIsEditable
-            return nflags
-        elif col == 2:
-            # print(col, int(oflags))
-            nflags = Qt.ItemNeverHasChildren
-            nflags |= Qt.ItemIsUserCheckable
-            nflags |= Qt.ItemIsEnabled
-            # nflags |= Qt.ItemIsEditable
-            return nflags
-        elif col== 3:
+        elif col == self.columnIndex("Name"):
             nflags = Qt.ItemNeverHasChildren
             nflags |= Qt.ItemIsEnabled
             nflags |= Qt.ItemIsEditable
@@ -95,7 +96,7 @@ class FragmentsModel(QtCore.QAbstractTableModel):
                 # make sure the color button in column 3 is always open
                 # (so no double-clicking required)
                 for i in range(self.rowCount()):
-                    index = self.createIndex(i, 4)
+                    index = self.createIndex(i, self.columnIndex("Color"))
                     table.openPersistentEditor(index)
 
             return FragmentsModel.columns[section]
@@ -133,18 +134,18 @@ class FragmentsModel(QtCore.QAbstractTableModel):
         fragments = self.project_view.fragments
         fragment = list(fragments.keys())[row]
         fragment_view = fragments[fragment]
-        if column == 0:
+        if column == self.columnIndex("Active"):
             if fragment_view.active:
                 return Qt.Checked
             else:
                 return Qt.Unchecked
-        if column == 1:
+        if column == self.columnIndex("Visible"):
             if fragment_view.visible:
                 return Qt.Checked
             else:
                 return Qt.Unchecked
-        if column == 2:
-            # Note that column is "Hide Mesh", but
+        if column == self.columnIndex("Hide\nMesh"):
+            # Note that column is "Hide\nMesh", but
             # internal variable is mesh_visible
             if fragment_view.mesh_visible:
                 return Qt.Unchecked
@@ -169,73 +170,58 @@ class FragmentsModel(QtCore.QAbstractTableModel):
         fragments = self.project_view.fragments
         fragment = list(fragments.keys())[row]
         fragment_view = fragments[fragment]
-        if column == 3:
+        
+        if column == self.columnIndex("Name"):
             return fragment.name
-        elif column == 4:
-            # print("ddr", row, volume_view.color.name())
+        elif column == self.columnIndex("Color"):
             return fragment.color.name()
-        elif column == 5:
-            # print("data display role", row, volume_view.direction)
+        elif column == self.columnIndex("Dir"):
             return ('X','Y')[fragment.direction]
-        elif column == 6:
+        elif column == self.columnIndex("Pts"):
             return len(fragment.gpoints)
-        elif column == 7:
+        elif column == self.columnIndex("cm^2"):
             return "%.4f"%fragment_view.sqcm
+        elif column == self.columnIndex("Type"):
+            return fragment.getType()
         else:
             return None
 
     def setData(self, index, value, role):
         row = index.row()
         column = index.column()
-        # print("setdata", row, column, value, role)
-        if role == Qt.CheckStateRole and column == 0:
-            # print("check", row, value)
-            fragments = self.project_view.fragments
-            fragment = list(fragments.keys())[row]
-            fragment_view = fragments[fragment]
-            exclusive = True
-            # print(self.main_window.app.keyboardModifiers())
-            if ((self.main_window.app.keyboardModifiers() & Qt.ControlModifier) 
-               or 
-               len(self.main_window.project_view.activeFragmentViews(unaligned_ok=True)) > 1):
-                exclusive = False
-            cv = Qt.CheckState(value)
-            self.main_window.setFragmentActive(fragment, cv==Qt.Checked, exclusive)
-            return True
-        elif role == Qt.CheckStateRole and column == 1:
-            # print(row, value)
-            fragments = self.project_view.fragments
-            fragment = list(fragments.keys())[row]
-            fragment_view = fragments[fragment]
-            cv = Qt.CheckState(value)
-            self.main_window.setFragmentVisibility(fragment, cv==Qt.Checked)
-            return True
-        elif role == Qt.CheckStateRole and column == 2:
-            # print(row, value)
-            fragments = self.project_view.fragments
-            fragment = list(fragments.keys())[row]
-            fragment_view = fragments[fragment]
-            # Note that column reads "Hide Mesh", but internal variable
-            # is mesh_visible
-            cv = Qt.CheckState(value)
-            self.main_window.setFragmentMeshVisibility(fragment, cv==Qt.Unchecked)
-            return True
-        elif role == Qt.EditRole and column == 3:
-            # print("setdata", row, value)
-            name = value
-            # print("sd name", value)
-            fragments = self.project_view.fragments
-            fragment = list(fragments.keys())[row]
-            # print("%s to %s"%(fragment.name, name))
-            if name != "":
-                self.main_window.renameFragment(fragment, name)
+        fragments = self.project_view.fragments
+        fragment = list(fragments.keys())[row]
+        fragment_view = fragments[fragment]
 
-        elif role == Qt.EditRole and column == 4:
-            # print("sd color", value)
-            fragments = self.project_view.fragments
-            fragment = list(fragments.keys())[row]
-            # print("setdata", row, color.name())
-            self.main_window.setFragmentColor(fragment, value)
+        if role == Qt.CheckStateRole:
+            cv = Qt.CheckState(value)
+            if column == self.columnIndex("Active"):
+                exclusive = True
+                if ((self.main_window.app.keyboardModifiers() & Qt.ControlModifier) 
+                   or 
+                   len(self.main_window.project_view.activeFragmentViews(unaligned_ok=True)) > 1):
+                    exclusive = False
+                self.main_window.setFragmentActive(fragment, cv==Qt.Checked, exclusive)
+                return True
+            elif column == self.columnIndex("Visible"):
+                self.main_window.setFragmentVisibility(fragment, cv==Qt.Checked)
+                return True
+            elif column == self.columnIndex("Hide\nMesh"):
+                print("hide", fragment, cv==Qt.Unchecked)
+                print("Hide column index:", self.columnIndex("Hide\nMesh"))
+                print("Current column:", column)
+                print("Setting mesh visibility to:", cv==Qt.Unchecked)
+                self.main_window.setFragmentMeshVisibility(fragment, cv==Qt.Unchecked)
+                # self.dataChanged.emit(index, index, [Qt.CheckStateRole])
+                return True
+
+        elif role == Qt.EditRole:
+            if column == self.columnIndex("Name"):
+                name = value
+                if name != "":
+                    self.main_window.renameFragment(fragment, name)
+            elif column == self.columnIndex("Color"):
+                self.main_window.setFragmentColor(fragment, value)
 
         return False
 
@@ -265,7 +251,9 @@ class Fragment(BaseFragment):
         self.gpoints = np.zeros((0,3), dtype=np.float32)
 
         # History of gpoints, for undo functionality
-        self.gpoints_history : LifoQueue = LifoQueue(100)
+        # self.gpoints_history : LifoQueue = LifoQueue(50)
+        self.gpoints_history = deque(maxlen=50)
+        self.type = BaseFragment.Type.FRAGMENT
 
     def createView(self, project_view):
         return FragmentView(project_view, self)
@@ -285,6 +273,7 @@ class Fragment(BaseFragment):
         info['direction'] = self.direction
         info['color'] = self.color.name()
         info['params'] = self.params
+        info['type'] = self.type.value if self.type else Fragment.Type.FRAGMENT.value  # Save fragment type
         info['gpoints'] = self.gpoints.tolist()
         if self.params.get('echo', '') != '':
             info['gpoints'] = []
@@ -332,13 +321,18 @@ class Fragment(BaseFragment):
         name = info['name']
         direction = info['direction']
         gpoints = info['gpoints']
-        frag = Fragment(name, direction)
+        
+        # Create correct fragment type based on saved type
+        frag_type = info.get('type', BaseFragment.Type.FRAGMENT.value)
+        if frag_type == BaseFragment.Type.UMBILICUS.value:
+            from umbilicus_fragment import UmbilicusFragment
+            frag = UmbilicusFragment(name, direction)
+        else:
+            frag = Fragment(name, direction)
+            
         frag.setColor(color, no_notify=True)
         frag.valid = True
-        # if len(name) > 0 and name[-1] == "∴":
-        #     frag.no_mesh = True
         if len(gpoints) > 0:
-            # frag.gpoints = np.array(gpoints, dtype=np.int32)
             frag.gpoints = np.array(gpoints, dtype=np.float32)
         if 'params' in info:
             frag.params = info['params']
@@ -347,8 +341,6 @@ class Fragment(BaseFragment):
         if 'created' in info:
             frag.created = info['created']
         else:
-            # old file without "created" timestamp
-            # sleeping to make sure timestamp is unique
             time.sleep(.1)
             frag.created = Utils.timestamp()
         if 'modified' in info:
@@ -1572,6 +1564,13 @@ class FragmentView(BaseFragmentView):
         ixyzs = ixyzs[:,ixyzs[0,:]<ftrdata.shape[0]]
         ixyzs = ixyzs[:,ixyzs[0,:]>=0]
         # use_linear_interpolation = True
+        # TODO: commented out this code because it should
+        # no longer be needed, since createZsurf should
+        # only be called when exporting the fragment as
+        # an obj file.
+        # The code below no longer works because trdata is
+        # now 4D, not 3D
+        ''' 
         vol = self.cur_volume_view.volume
         vol.setImmediateDataMode(True)
         if FragmentView.use_linear_interpolation:
@@ -1589,6 +1588,7 @@ class FragmentView(BaseFragmentView):
             # print("nn")
             self.ssurf[(ixyzs[1,:],ixyzs[2,:])] = ftrdata[(ixyzs[0,:], ixyzs[1,:], ixyzs[2,:])]
         vol.setImmediateDataMode(False)
+        '''
 
 
         timer.time("ssurf")
@@ -1754,6 +1754,8 @@ class FragmentView(BaseFragmentView):
     # stxy is ignored
     def addPoint(self, tijk, stxy):
         # ijk using volume-view's direction
+        if tijk is None: # picked point is outside of current fragment
+            return
         fijk = self.vijkToFijk(tijk)
 
         # use fijk rounded to nearest integer (note that this
@@ -1809,40 +1811,71 @@ class FragmentView(BaseFragmentView):
 
     def trgls(self):
         if self.tri is None:
-            return None
+            # Return empty array instead of None for new fragments
+            return np.zeros((0,3), dtype=np.int32)
         return self.tri.simplices
 
     # return True if succeeds, False if fails
     # Note that update_xyz and update_st are ignored here;
     # st is always updated due to the call to FragmentView.setLocalPoints() 
     def movePoint(self, index, new_vijk, update_xyz, update_st):
+        # print("mp a")
         old_fijk = self.fpoints[index]
         new_fijk = self.vijkToFijk(new_vijk)
         new_matches = np.where((np.rint(self.fpoints[:, 0:2]) == np.rint(new_fijk[0:2])).all(axis=1))[0]
         if (round(old_fijk[0]) != round(new_fijk[0]) or round(old_fijk[1]) != round(new_fijk[1])) and new_matches.shape[0] > 0:
             print("movePoint point already exists at this ij", new_vijk)
             return False
+        # print("mp b")
         new_gijk = self.cur_volume_view.transposedIjkToGlobalPosition(new_vijk)
+        # print("mp b2")
         # print(self.fragment.gpoints)
         # print(match, new_gijk)
         self.pushFragmentState()
+        # print("mp c")
         self.fragment.gpoints[index, :] = new_gijk
         # print(self.fragment.gpoints)
         self.fragment.notifyModified()
         # NOTE that this will set stpoints as well as fpoints and vpoints
         self.setLocalPoints(True, False)
+        # print("mp d")
         return True
 
     def pushFragmentState(self):
         """Push the current list of gpoints onto the stack in preparation for changing gpoints."""
         gpoints_copy = np.copy(self.fragment.gpoints)
-        self.fragment.gpoints_history.put(gpoints_copy)
+        self.fragment.gpoints_history.append(gpoints_copy)
 
     def popFragmentState(self):
         """Replace current gpoints with top of the stack, and update."""
-        hist_size=  self.fragment.gpoints_history.qsize()
+        hist_size =  len(self.fragment.gpoints_history)
         if hist_size > 0:
-            self.fragment.gpoints = self.fragment.gpoints_history.get()
+            self.fragment.gpoints = self.fragment.gpoints_history.pop()
             self.fragment.notifyModified()
             self.setLocalPoints(True, False)
+
+    def pushFragmentStateOld(self):
+        """Push the current list of gpoints onto the stack in preparation for changing gpoints."""
+        # print("pfs a")
+        gpoints_copy = np.copy(self.fragment.gpoints)
+        # print("pfs b")
+        try:
+            self.fragment.gpoints_history.put(gpoints_copy, block=False)
+        except:
+            # print("pfs e")
+            self.fragment.gpoints_history.get()
+            self.fragment.gpoints_history.put(gpoints_copy, block=False)
+        # print("pfs c")
+
+    def popFragmentStateOld(self):
+        """Replace current gpoints with top of the stack, and update."""
+        hist_size=  self.fragment.gpoints_history.qsize()
+        if hist_size > 0:
+            try:
+                self.fragment.gpoints = self.fragment.gpoints_history.get(block=False)
+            except:
+                return
+            self.fragment.notifyModified()
+            self.setLocalPoints(True, False)
+
 

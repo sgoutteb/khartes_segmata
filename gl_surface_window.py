@@ -64,7 +64,14 @@ def VoidPtr(i):
 
 from utils import Utils
 from data_window import DataWindow
-from gl_data_window import GLDataWindowChild, fragment_trgls_code, common_offset_code
+from project import ProjectView
+from gl_data_window import (
+        GLDataWindowChild, 
+        ColormapTexture,
+        fragment_trgls_code, 
+        common_offset_code, 
+        # UniBuf
+        )
 
 
 class GLSurfaceWindow(DataWindow):
@@ -340,6 +347,8 @@ class GLSurfaceWindow(DataWindow):
         return ((stxy[0]-dx,stxy[1]-dy),(stxy[0]+dx,stxy[1]+dy))
 
     # overrides version in DataWindow
+    # Used to set image on fragment; this is called
+    # when exporting fragment to obj file with texture.
     def setMapImage(self, fv):
         print("GLSW setMapImage")
         if fv is None:
@@ -350,7 +359,7 @@ class GLSurfaceWindow(DataWindow):
             return
         if self.volume_view.stxytf is None:
             return
-        fbo = self.glw.data_fbo
+        fbo = self.glw.base_data_fbo
         if fbo is None:
             return
         # This is a QImage
@@ -391,18 +400,64 @@ slice_code = {
       #version 410 core
 
       uniform sampler2D base_sampler;
+      // uniform int use_colormap_sampler = 0;
+      // NOTE: base_alpha is not currently used
+      uniform float base_alpha;
+      uniform int base_colormap_sampler_size = 0;
+      uniform sampler2D base_colormap_sampler;
+      uniform int base_uses_overlay_colormap = 0;
+
+      uniform sampler2D overlay_samplers[2];
+      uniform float overlay_alphas[2];
+      uniform int overlay_colormap_sampler_sizes[2];
+      uniform sampler2D overlay_colormap_samplers[2];
+      uniform int overlay_uses_overlay_colormaps[2];
+      
       uniform sampler2D underlay_sampler;
-      uniform sampler2D overlay_sampler;
+      uniform sampler2D top_label_sampler;
       uniform sampler2D trgls_sampler;
-      uniform int uses_overlay_colormap = 0;
       in vec2 ftxt;
       out vec4 fColor;
+
+      void colormapper(in vec4 pixel, in int uoc, in int css, in sampler2D colormap, out vec4 result) {
+        if (uoc > 0) {
+            float fr = pixel[0];
+            uint ir = uint(fr*65535.);
+            if ((ir & uint(32768)) == 0) {
+                // pixel *= 2.;
+                float gray = pixel[0]*2.;
+                result = vec4(gray, gray, gray, 1.);
+            } else {
+                uint ob = ir & uint(31);
+                // ob = ir & uint(31);
+                ir >>= 5;
+                uint og = ir & uint(31);
+                ir >>= 5;
+                uint or = ir & uint(31);
+                result[0] = float(or) / 31.;
+                result[1] = float(og) / 31.;
+                result[2] = float(ob) / 31.;
+                result[3] = 1.;
+            }
+        } else if (css > 0) {
+            float fr = pixel[0];
+            float sz = float(css);
+            // adjust to allow for peculiarities of texture coordinates
+            fr = .5/sz + fr*(sz-1)/sz;
+            vec2 ftx = vec2(fr, .5);
+            result = texture(colormap, ftx);
+        } else {
+            float fr = pixel[0];
+            result = vec4(fr, fr, fr, 1.);
+        }
+      }
 
       void main()
       {
         float alpha;
         fColor = texture(base_sampler, ftxt);
-        if (uses_overlay_colormap > 0) {
+        /*
+        if (base_uses_overlay_colormap > 0) {
             float fr = fColor[0];
             uint ir = uint(fr*65535.);
             if ((ir & uint(32768)) == 0) {
@@ -422,8 +477,29 @@ slice_code = {
                 fColor[3] = 1.;
             }
 
+        } else if (base_colormap_sampler_size > 0) {
+            float fr = fColor[0];
+            float sz = float(base_colormap_sampler_size);
+            fr = .5/sz + fr*(sz-1)/sz;
+            vec2 ftx = vec2(fr, .5);
+            fColor = texture(base_colormap_sampler, ftx);
         }
+        */
 
+        vec4 result;
+        colormapper(fColor, base_uses_overlay_colormap, base_colormap_sampler_size, base_colormap_sampler, result);
+        fColor = result;
+
+        for (int i=0; i<2; i++) {
+            float oalpha = overlay_alphas[i];
+            if (oalpha == 0.) continue;
+            vec4 oColor = texture(overlay_samplers[i], ftxt);
+            vec4 result;
+            colormapper(oColor, overlay_uses_overlay_colormaps[i], overlay_colormap_sampler_sizes[i], overlay_colormap_samplers[i], result);
+            oalpha *= result[3];
+            fColor = (1.-oalpha)*fColor + oalpha*result;
+        }
+        
         vec4 uColor = texture(underlay_sampler, ftxt);
         alpha = uColor.a;
         fColor = (1.-alpha)*fColor + alpha*uColor;
@@ -433,7 +509,7 @@ slice_code = {
         // alpha = 0.;
         fColor = (1.-alpha)*fColor + alpha*frColor;
 
-        vec4 oColor = texture(overlay_sampler, ftxt);
+        vec4 oColor = texture(top_label_sampler, ftxt);
         alpha = oColor.a;
         fColor = (1.-alpha)*fColor + alpha*oColor;
       }
@@ -650,12 +726,19 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         self.message_prefix = "sw"
         # Cache these so we can recalculate the atlas 
         # whenever volume_view or volume_view.direction change
+        self.overlay_count = ProjectView.overlay_count
         self.volume_view =  None
         self.volume_view_direction = -1
+        self.volume_view_is_indicator = False
+        self.overlay_volume_views = self.overlay_count*[None]
+        self.overlay_volume_view_directions = self.overlay_count*[-1]
+        self.overlay_volume_view_is_indicator = self.overlay_count*[False]
         self.active_fragment = None
         self.atlas = None
+        self.overlay_atlases = self.overlay_count*[None]
         self.active_vao = None
-        self.data_fbo = None
+        self.base_data_fbo = None
+        self.overlay_data_fbos = self.overlay_count*[None]
         self.xyz_fbo = None
         self.xyz_pbo = None
         self.xyz_arr = None
@@ -670,7 +753,7 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         f.glClearColor(.6,.3,.3,1.)
         self.buildPrograms()
         self.buildSliceVao()
-        self.printInfo()
+        # self.printInfo()
 
     def setDefaultViewport(self):
         f = self.gl
@@ -716,11 +799,24 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         # fbo where the data will be drawn
         fbo_format = QOpenGLFramebufferObjectFormat()
         fbo_format.setAttachment(QOpenGLFramebufferObject.CombinedDepthStencil)
+        # TODO
         fbo_format.setInternalTextureFormat(pygl.GL_RGBA16)
-        self.data_fbo = QOpenGLFramebufferObject(vp_size, fbo_format)
-        self.data_fbo.bind()
+        self.base_data_fbo = QOpenGLFramebufferObject(vp_size, fbo_format)
+        self.base_data_fbo.bind()
         draw_buffers = (pygl.GL_COLOR_ATTACHMENT0,)
         f.glDrawBuffers(len(draw_buffers), draw_buffers)
+
+        for i in range(self.overlay_count):
+            # fbo where a data overlay will be drawn
+            fbo_format = QOpenGLFramebufferObjectFormat()
+            fbo_format.setAttachment(QOpenGLFramebufferObject.CombinedDepthStencil)
+            # TODO
+            fbo_format.setInternalTextureFormat(pygl.GL_RGBA16)
+            fbo = QOpenGLFramebufferObject(vp_size, fbo_format)
+            fbo.bind()
+            draw_buffers = (pygl.GL_COLOR_ATTACHMENT0,)
+            f.glDrawBuffers(len(draw_buffers), draw_buffers)
+            self.overlay_data_fbos[i] = fbo
 
         # fbo where vertices and wireframe triangles will be drawn 
         fbo_format = QOpenGLFramebufferObjectFormat()
@@ -736,7 +832,7 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         self.setDefaultViewport()
         
     def paintGL(self):
-        self.checkAtlas()
+        self.checkAtlases()
         if self.volume_view is None:
             return
 
@@ -759,17 +855,69 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         self.trgl_pts_program = self.buildProgram(trgl_pts_code)
         self.fragment_trgls_program = self.buildProgram(fragment_trgls_code)
 
-    # Rebuild atlas if volume_view or volume_view.direction
-    # changes
-    def checkAtlas(self):
+
+    def createAtlas(self, volume_view, aunit):
+        if volume_view is None:
+            return None
+        aw,ah,ad = (2048,2048,400)
+        # aw,ah,ad = (2048,2048,200)
+        # TODO: for testing
+        # ad = 150
+        if self.atlas_chunk_size < 65:
+            ad = 70
+        # Loop to determine how much GPU memory can
+        # be allocated by Atlas.  If initial allocation
+        # fails, keep reducing the dimensions until
+        # it fits into memory.
+        atlas = None
+        while True:
+            print("creating atlas with dimensions",aw,ah,ad)
+            atlas = Atlas(volume_view, self.gl, self.logger, aunit, tex3dsz=(aw,ah,ad), chunk_size=self.atlas_chunk_size)
+            if atlas.valid:
+                break
+            aw = (aw*3)//4
+        print(" atlas created")
+        return atlas
+
+    '''
+    Rebuild atlas if volume_view or volume_view.direction
+    changes.  But there is a complication:
+    In the case of overlays, if the volume_view is set to
+    none, don't deallocate the data and the atlas texture memory right
+    away, in case the user will want to redisplay the same volume
+    as before (they may just be toggling the overlay on and off).
+    '''
+
+    def checkAtlases(self):
         dw = self.gldw
         if dw.volume_view is None:
             self.volume_view = None
             self.volume_view_direction = -1
             self.active_fragment = None
+            # TODO: for testing only!
             # self.atlas = None
+            # if self.atlas is set to None without
+            # calling setVolumeView first, the old volume_view's
+            # memory will not be released until after the new volume_view
+            # is loaded!
             if self.atlas is not None:
                 self.atlas.setVolumeView(None)
+                self.atlas = None
+
+        for i in range(self.overlay_count):
+            if dw.overlay_volume_views[i] is None:
+                '''
+                self.overlay_volume_views[i] = None
+                self.overlay_volume_view_directions[i] = -1
+                if self.overlay_atlases[i] is not None:
+                    self.overlay_atlases[i].setVolumeView(None)
+                    self.overlay_atlases[i] = None
+                '''
+                if Atlas.isInUse(self.overlay_atlases[i]):
+                    # self.overlay_atlases[i].setVolumeView(None)
+                    self.overlay_atlases[i].in_use = False
+
+        if dw.volume_view is None:
             return
         pv = dw.window.project_view
         mfv = None
@@ -777,9 +925,15 @@ class GLSurfaceWindowChild(GLDataWindowChild):
             mfv = pv.mainActiveFragmentView(unaligned_ok=True)
         if self.active_fragment != mfv:
             self.active_fragment = mfv
-        if self.volume_view != dw.volume_view or self.volume_view_direction != self.volume_view.direction :
+        if self.volume_view != dw.volume_view or self.volume_view_direction != self.volume_view.direction or self.volume_view_is_indicator != self.volume_view.colormap_is_indicator:
             self.volume_view = dw.volume_view
             self.volume_view_direction = self.volume_view.direction
+            self.volume_view_is_indicator = self.volume_view.colormap_is_indicator
+            self.atlas = self.createAtlas(self.volume_view, 0)
+            # self.atlas.setVolumeView(self.volume_view)
+            '''
+            # TODO: for testing!
+            self.atlas = None
             if self.atlas is None:
                 aw,ah,ad = (2048,2048,400)
                 # TODO: for testing
@@ -798,6 +952,17 @@ class GLSurfaceWindowChild(GLDataWindowChild):
                     aw = (aw*3)//4
             else:
                 self.atlas.setVolumeView(self.volume_view)
+            '''
+        for i in range(self.overlay_count):
+            if dw.overlay_volume_views[i] is None:
+                continue
+            if self.overlay_atlases[i] is not None:
+                self.overlay_atlases[i].in_use = True
+            if self.overlay_volume_views[i] != dw.overlay_volume_views[i] or self.overlay_volume_view_directions[i] != self.overlay_volume_views[i].direction or self.overlay_volume_view_is_indicator[i] != self.overlay_volume_views[i].colormap_is_indicator:
+                self.overlay_volume_views[i] = dw.overlay_volume_views[i]
+                self.overlay_volume_view_directions[i] = dw.overlay_volume_views[i].direction
+                self.overlay_volume_view_is_indicator[i] = dw.overlay_volume_views[i].colormap_is_indicator
+                self.overlay_atlases[i] = self.createAtlas(self.overlay_volume_views[i], 1+i)
 
 
     def drawUnderlays(self, data):
@@ -865,7 +1030,7 @@ class GLSurfaceWindowChild(GLDataWindowChild):
 
         pv = dw.window.project_view
         mfv = self.active_fragment
-        if mfv is None:
+        if mfv is None or mfv.fragment.getType() == "U":
             # print("No fragment visible")
             return
 
@@ -898,6 +1063,10 @@ class GLSurfaceWindowChild(GLDataWindowChild):
                 if len(larr) >= self.atlas.max_nchunks-1:
                     larr = larr[:self.atlas.max_nchunks-1]
                 self.atlas.addBlocks(larr, dw.window.zarrFutureDoneCallback)
+                for atlas in self.overlay_atlases:
+                    if not Atlas.isInUse(atlas):
+                        continue
+                    atlas.addBlocks(larr, dw.window.zarrFutureDoneCallback)
                 overlay_label_text += "  Zoom Level: %d  Chunks: %d"%(zoom_level, len(larr))
                 timera.time("add blocks")
 
@@ -911,6 +1080,10 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         # from RAM, in the background.  See comments in addBlocks
         # for more details
         self.atlas.loadTexturesFromPbos(dw.window.zarrFutureDoneCallback)
+        for atlas in self.overlay_atlases:
+            if not Atlas.isInUse(atlas):
+                continue
+            atlas.loadTexturesFromPbos(dw.window.zarrFutureDoneCallback)
         timera.time("load textures")
 
         # NOTE that drawData uses the blocks added in addBlocks;
@@ -921,20 +1094,43 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         vao.release()
 
         self.slice_program.bind()
-        base_tex = self.data_fbo.texture()
+        base_tex = self.base_data_fbo.texture()
+        '''
         bloc = self.slice_program.uniformLocation("base_sampler")
         if bloc < 0:
             print("couldn't get loc for base sampler")
             return
-        bunit = 1
-        f.glActiveTexture(pygl.GL_TEXTURE0+bunit)
+        tunit = 1
+        # bunit = 1
+        f.glActiveTexture(pygl.GL_TEXTURE0+tunit)
         f.glBindTexture(pygl.GL_TEXTURE_2D, base_tex)
-        self.slice_program.setUniformValue(bloc, bunit)
+        self.slice_program.setUniformValue(bloc, tunit)
 
         uoc = 0
         if volume_view.volume.uses_overlay_colormap:
             uoc = 1
-        self.slice_program.setUniformValue("uses_overlay_colormap", uoc)
+        self.slice_program.setUniformValue("base_uses_overlay_colormap", uoc)
+
+        cmtex = self.getColormapTexture(volume_view)
+        if cmtex is None:
+            self.slice_program.setUniformValue("base_colormap_sampler_size", 0)
+        else:
+            cloc = self.slice_program.uniformLocation("base_colormap_sampler")
+            tunit += 1
+            f.glActiveTexture(pygl.GL_TEXTURE0+tunit)
+            cmtex.bind()
+            self.slice_program.setUniformValue(cloc, tunit)
+            # print("using colormap sampler")
+            self.slice_program.setUniformValue("base_colormap_sampler_size", cmtex.width())
+        '''
+        tunit = 1
+        tunit = self.setTextureOfSlice(base_tex, volume_view, tunit, "base", "")
+        for i, ovv in enumerate(dw.overlay_volume_views):
+            prefix = "overlay"
+            suffix = "s[%d]"%i
+            otex = self.overlay_data_fbos[i].texture()
+            tunit = self.setTextureOfSlice(otex, ovv, tunit, prefix, suffix)
+            # print(suffix,tunit,otex)
 
         underlay_data = np.zeros((wh,ww,4), dtype=np.uint16)
         self.drawUnderlays(underlay_data)
@@ -943,28 +1139,30 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         if uloc < 0:
             print("couldn't get loc for underlay sampler")
             return
-        uunit = 2
-        f.glActiveTexture(pygl.GL_TEXTURE0+uunit)
+        # tunit += 1
+        # uunit = 2
+        f.glActiveTexture(pygl.GL_TEXTURE0+tunit)
         underlay_tex.bind()
-        self.slice_program.setUniformValue(uloc, uunit)
+        self.slice_program.setUniformValue(uloc, tunit)
 
-        overlay_data = np.zeros((wh,ww,4), dtype=np.uint16)
-        self.drawOverlays(overlay_data, overlay_label_text)
-        overlay_tex = self.texFromData(overlay_data, QImage.Format_RGBA64)
-        oloc = self.slice_program.uniformLocation("overlay_sampler")
+        top_label_data = np.zeros((wh,ww,4), dtype=np.uint16)
+        self.drawOverlays(top_label_data, overlay_label_text)
+        top_label_tex = self.texFromData(top_label_data, QImage.Format_RGBA64)
+        oloc = self.slice_program.uniformLocation("top_label_sampler")
         if oloc < 0:
-            print("couldn't get loc for overlay sampler")
+            print("couldn't get loc for top_label sampler")
             return
-        ounit = 3
-        f.glActiveTexture(pygl.GL_TEXTURE0+ounit)
-        overlay_tex.bind()
-        self.slice_program.setUniformValue(oloc, ounit)
+        # ounit = 3
+        tunit += 1
+        f.glActiveTexture(pygl.GL_TEXTURE0+tunit)
+        top_label_tex.bind()
+        self.slice_program.setUniformValue(oloc, tunit)
 
         tloc = self.slice_program.uniformLocation("trgls_sampler")
         if tloc < 0:
             print("couldn't get loc for trgls sampler")
             return
-        tunit = 4
+        tunit += 1
         f.glActiveTexture(pygl.GL_TEXTURE0+tunit)
         tex_ids = self.trgls_fbo.textures()
         trgls_tex_id = tex_ids[0]
@@ -994,13 +1192,13 @@ class GLSurfaceWindowChild(GLDataWindowChild):
             bset.add(tuple(block))
         return bset
 
+    '''
     def getDrawnData(self):
         f = self.gl
-        fbo = self.data_fbo
+        fbo = self.base_data_fbo
         fbo.bind()
         w = fbo.width()
-
-
+    '''
 
     def getBlocks(self, fbo):
         timera = Utils.Timer()
@@ -1121,7 +1319,15 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         stxy_xform = self.stxyXform()
         # if stxy_xform is None:
         #     return
-        self.atlas.displayBlocks(self.data_fbo, self.active_vao, stxy_xform)
+        self.atlas.displayBlocks(self.base_data_fbo, self.active_vao, stxy_xform)
+        for i in range(self.overlay_count):
+            # print(i)
+            atlas = self.overlay_atlases[i]
+            if not Atlas.isInUse(atlas):
+                continue
+            fbo = self.overlay_data_fbos[i]
+            # print("",i)
+            atlas.displayBlocks(fbo, self.active_vao, stxy_xform)
 
     # pts are in form stxy.x, stxy.y, index
     def getPointsInStxyWindow(self, fv, xywindow):
@@ -1528,6 +1734,7 @@ class UniBuf:
         self.buffer_id = gl.glGenBuffers(1)
         gl.glBindBufferBase(gl.GL_UNIFORM_BUFFER, self.binding_point, self.buffer_id)
         self.setBuffer()
+        # print("ubo", self.data.shape, self.binding_point, self.buffer_id)
 
     def bindToShader(self, shader_id, uniform_index):
         gl = self.gl
@@ -1664,6 +1871,10 @@ class Chunk:
         if int_dr is None:
             self.status = Chunk.Status.IGNORE
             return False
+        # TODO:
+        int_dr4 = (
+                (0, int_dr[0][0], int_dr[0][1], int_dr[0][2]),
+                (1, int_dr[1][0], int_dr[1][1], int_dr[1][2]))
         # print(pdr, all_dr, int_dr)
 
         # Compute change in pdr (padded data-chunk rectangle) 
@@ -1678,10 +1889,12 @@ class Chunk:
         # print(skip0, skip1)
         # print(dr, int_dr)
         acsz = self.atlas.acsz
-        buf = np.zeros((acsz[2], acsz[1], acsz[0]), np.uint16)
         c0 = skip0
         c1 = tuple(acsz[i]-skip1[i] for i in range(len(acsz)))
+        # adata = self.atlas.datas[dl]
         adata = self.atlas.datas[dl]
+        # TODO:
+        buf = np.zeros((acsz[2], acsz[1], acsz[0], adata.shape[3]), adata.dtype)
 
         timera = Utils.Timer()
         timera.active = False
@@ -1701,7 +1914,8 @@ class Chunk:
         # to shape (128, 128).  For some reason, this dimension loss 
         # occurs with adata but not buf.
         # The reshape restores the lost dimension.
-        buf[c0[2]:c1[2], c0[1]:c1[1], c0[0]:c1[0]] = adata[int_dr[0][2]:int_dr[1][2], int_dr[0][1]:int_dr[1][1], int_dr[0][0]:int_dr[1][0]].reshape([int_dr[1][i]-int_dr[0][i] for i in reversed(range(3))])
+        # buf[c0[2]:c1[2], c0[1]:c1[1], c0[0]:c1[0]] = adata[int_dr[0][2]:int_dr[1][2], int_dr[0][1]:int_dr[1][1], int_dr[0][0]:int_dr[1][0]].reshape([int_dr[1][i]-int_dr[0][i] for i in reversed(range(3))])
+        buf[c0[2]:c1[2], c0[1]:c1[1], c0[0]:c1[0]] = adata[int_dr[0][2]:int_dr[1][2], int_dr[0][1]:int_dr[1][1], int_dr[0][0]:int_dr[1][0], :].reshape([int_dr4[1][i]-int_dr4[0][i] for i in reversed(range(4))])
         '''
         # Trying to figure out the dropped-dimension problem...
         try:
@@ -1923,6 +2137,8 @@ atlas_data_code = {
       }
     ''',
 
+    # double braces ({{ and }}) because this code is
+    # templated, to allow max_nchunks to be varied
     "fragment_template": '''
       #version 410 core
 
@@ -2002,9 +2218,10 @@ class Atlas:
             self.logger.disconnect(self.connection)
 
 
-    def __init__(self, volume_view, gl, logger, tex3dsz=(2048,2048,300), chunk_size=126):
+    def __init__(self, volume_view, gl, logger, iaunit, tex3dsz=(2048,2048,300), chunk_size=126):
         print("Creating atlas")
         dcsz = (chunk_size, chunk_size, chunk_size)
+        self.valid = False
         self.gl = gl
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.pbo_queue = Queue()
@@ -2040,26 +2257,29 @@ class Atlas:
         # for var in ["atlas", "xyz_xform", "tmins", "tmaxs", "TMins", "TMaxs", "XForms", "ZChartIds", "chart_ids", "ncharts"]:
         #     print(var, self.program.uniformLocation(var))
         pid = self.program.programId()
-        print("program id", pid)
+        # print("program id", pid)
 
         # for var in ["TMaxs", "TMins", "XForms", "ZChartIds"]:
         #    print(var, gl.glGetUniformBlockIndex(pid, var))
-        self.tmax_ubo = UniBuf(gl, np.zeros((max_nchunks, 4), dtype=np.float32), 0)
+
+        skip = 4*iaunit
+
+        self.tmax_ubo = UniBuf(gl, np.zeros((max_nchunks, 4), dtype=np.float32), skip+0)
         loc = gl.glGetUniformBlockIndex(pid, "TMaxs")
         self.tmax_ubo.bindToShader(pid, loc)
 
-        self.tmin_ubo = UniBuf(gl, np.zeros((max_nchunks, 4), dtype=np.float32), 1)
+        self.tmin_ubo = UniBuf(gl, np.zeros((max_nchunks, 4), dtype=np.float32), skip+1)
         loc = gl.glGetUniformBlockIndex(pid, "TMins")
         self.tmin_ubo.bindToShader(pid, loc)
 
-        self.xform_ubo = UniBuf(gl, np.zeros((max_nchunks, 4, 4), dtype=np.float32), 2)
+        self.xform_ubo = UniBuf(gl, np.zeros((max_nchunks, 4, 4), dtype=np.float32), skip+2)
         loc = gl.glGetUniformBlockIndex(pid, "XForms")
         self.xform_ubo.bindToShader(pid, loc)
 
         # even though data in this case could be listed as a 1D
         # array of ints, UBO layout rules require that the ints
         # be aligned every 16 bytes.
-        self.chart_id_ubo = UniBuf(gl, np.zeros((max_nchunks, 4), dtype=np.int32), 3)
+        self.chart_id_ubo = UniBuf(gl, np.zeros((max_nchunks, 4), dtype=np.int32), skip+3)
         loc = gl.glGetUniformBlockIndex(pid, "ChartIds")
         self.chart_id_ubo.bindToShader(pid, loc)
 
@@ -2082,10 +2302,10 @@ class Atlas:
         '''
         # width, height, depth
         tex3d.setSize(*self.asz)
+        # TODO: set format based on volume_view information
         # see https://stackoverflow.com/questions/23533749/difference-between-gl-r16-and-gl-r16ui
         tex3d.setFormat(QOpenGLTexture.R16_UNorm)
 
-        self.valid = False
         # MiniLogger will detect if the Qt OpenGL error logger
         # receives any error messages
         ml = self.MiniLogger(logger)
@@ -2093,7 +2313,7 @@ class Atlas:
             # This will fail if there is not enough GPU memory
             tex3d.allocateStorage()
             self.tex3d = tex3d
-            aunit = 4
+            aunit = 1+iaunit
             # If the OpenGL module is allowed to throw exceptions
             # (the default; this can be changed at the top of
             # gl_data_window.py), the out-of-memory exception
@@ -2105,9 +2325,11 @@ class Atlas:
             self.program.setUniformValue(aloc, aunit)
             gl.glActiveTexture(pygl.GL_TEXTURE0)
             tex3d.release()
+            # print(aunit, aloc, pid, tex3d.textureId())
             self.valid = True
-        except:
-            print("exception!")
+        except Exception as e:
+            print("Atlas creation exception!")
+            print(e)
             ml.close()
             pass
         if ml.message_count > 0: 
@@ -2118,10 +2340,13 @@ class Atlas:
         self.setVolumeView(volume_view)
 
     def setVolumeView(self, volume_view):
-        print("setVolumeView", volume_view.volume.name if volume_view else "(None)")
-        self.clearData()
+        print("Atlas.setVolumeView", volume_view.volume.name if volume_view else "(None)")
+        not_none = volume_view is not None
+        self.in_use = not_none
+        self.clearData(rebuild=not_none)
 
         self.volume_view = volume_view
+
 
         if volume_view is None:
             # Need to clear out self.datas as soon as possible
@@ -2136,10 +2361,11 @@ class Atlas:
         is_zarr = vol.is_zarr
         dcsz = self.dcsz
 
-        uoc = vol.uses_overlay_colormap
-        # print("svv uoc", uoc)
+        # TODO: use volume_view.colormap_is_indicator
+        ind = volume_view.colormap_is_indicator
+        # print("svv ind", ind)
         tex3d = self.tex3d
-        if uoc:
+        if ind:
             tex3d.setMagnificationFilter(QOpenGLTexture.Nearest)
             tex3d.setMinificationFilter(QOpenGLTexture.Nearest)
         else:
@@ -2157,7 +2383,9 @@ class Atlas:
         dsz = []
         for data in datas:
             # print("data shape", data.shape)
-            shape = data.shape
+            # TODO
+            # shape = data.shape
+            shape = data.shape[:3]
             dsz.append(tuple(shape[::-1]))
         self.datas = datas
         self.dsz = dsz
@@ -2172,20 +2400,29 @@ class Atlas:
         self.program.setUniformValue("xyz_xform", xyz_xform)
         # self.program.release()
 
-    def clearData(self):
+    @staticmethod
+    def isInUse(atlas):
+        if atlas is None:
+            return False
+        if not atlas.in_use:
+            return False
+        return True
+
+    def clearData(self, rebuild=True):
         # print("clearing atlas data")
         aksz = self.aksz
         self.chunks.clear()
-        for k in range(aksz[2]):
-            for j in range(aksz[1]):
-                for i in range(aksz[0]):
-                    ak = (i,j,k)
-                    dk = (i,j,k)
-                    dl = -1
-                    chunk = Chunk(self, ak, dk, dl)
-                    key = self.key(dk, dl)
-                    self.chunks[key] = chunk
         self.pbo_queue = Queue()
+        if rebuild:
+            for k in range(aksz[2]):
+                for j in range(aksz[1]):
+                    for i in range(aksz[0]):
+                        ak = (i,j,k)
+                        dk = (i,j,k)
+                        dl = -1
+                        chunk = Chunk(self, ak, dk, dl)
+                        key = self.key(dk, dl)
+                        self.chunks[key] = chunk
 
     def xyzXform(self, data_size):
         mat = np.zeros((4,4), dtype=np.float32)
@@ -2366,11 +2603,9 @@ class Atlas:
         # (PBOs are designed to allow transferring data from
         # RAM to GPU in the background)
 
-        ''''''
         # Option 1
         self.loadPbos()
         timer.time(" to pbos")
-        ''''''
         '''
         # Option 2
         self.loadPbos()

@@ -15,6 +15,8 @@ from PyQt5.QtGui import QColor
 
 class ProjectView:
 
+    overlay_count = 2
+
     def __init__(self, project):
         print("Initializing project view")
         self.project = project
@@ -22,6 +24,8 @@ class ProjectView:
         if not project.valid:
             return
 
+        # dict: Volume to VolumeView
+        # (VolumeView has a pointer back to Volume)
         self.volumes = {}
         for volume in project.volumes:
             # print(volume.name)
@@ -34,6 +38,7 @@ class ProjectView:
 
         self.cur_volume = None
         self.cur_volume_view = None
+        self.overlay_volume_views = self.overlay_count*[None]
         self.nearby_node_index = -1
         self.nearby_node_fv = None
         project.project_views.append(self)
@@ -98,6 +103,14 @@ class ProjectView:
         prj = {}
         if self.cur_volume is not None:
             prj['cur_volume'] = self.cur_volume.name
+        overlay_volume_names = []
+        for ovv in self.overlay_volume_views:
+            if ovv is None:
+                name = ""
+            else:
+                name = ovv.volume.name
+            overlay_volume_names.append(name)
+        prj['overlay_volumes'] = overlay_volume_names
         prj['vol_boxes_visible'] = self.vol_boxes_visible
         info['project'] = prj
 
@@ -108,6 +121,10 @@ class ProjectView:
             vv['zoom'] = vol.zoom
             vv['ijktf'] = list(vol.ijktf)
             vv['color'] = vol.color.name()
+            vv['opacity'] = vol.opacity
+            vv['colormap_name'] = vol.colormap_name
+            vv['colormap_range'] = vol.colormap_range
+            vv['colormap_is_indicator'] = vol.colormap_is_indicator
             vvs[vol.volume.name] = vv
         info['volumes'] = vvs
 
@@ -171,6 +188,18 @@ class ProjectView:
                     vv.ijktf = vinfo['ijktf']
                 if 'color' in vinfo:
                     vv.setColor(QColor(vinfo['color']), no_notify=True)
+                if 'opacity' in vinfo:
+                    # vv.opacity = vinfo['opacity']
+                    # vv.setOpacity(float(vinfo['opacity']), no_notify=True)
+                    vv.setOpacity(vinfo['opacity'], no_notify=True)
+                if 'colormap_range' in vinfo:
+                    cr  = vinfo['colormap_range']
+                    vv.setColormapRange(cr[0], cr[1], no_notify=True)
+                if 'colormap_is_indicator' in vinfo:
+                    vv.setColormapIsIndicator(vinfo['colormap_is_indicator'], no_notify=True)
+                if 'colormap_name' in vinfo:
+                    # vv.colormap_name = vinfo['colormap_name']
+                    vv.setColormap(vinfo['colormap_name'], no_notify=True)
                 # else:
                 # this else clause is not needed because VolumeView
                 # creator sets a random color
@@ -212,6 +241,15 @@ class ProjectView:
                         pv.setCurrentVolume(vol, no_notify=True)
                         # print("set cur vol")
                         break
+            if 'overlay_volumes' in pinfo:
+                for i, ovname in enumerate(pinfo['overlay_volumes']):
+                    if ovname == "":
+                        continue
+                    for vol in pv.volumes.keys():
+                        # print(" vol name", vol.name)
+                        if vol.name == ovname:
+                            pv.setOverlay(i, vol, no_notify=True)
+                            break
             if 'cur_fragment' in pinfo:
                 cfname = pinfo['cur_fragment']
                 for frag in pv.fragments.keys():
@@ -233,7 +271,6 @@ class ProjectView:
             # print("slp")
             fv.setLocalPoints(True)
 
-
     def setCurrentVolume(self, volume, no_notify=False):
         if self.cur_volume != volume:
             if self.cur_volume is not None:
@@ -246,6 +283,35 @@ class ProjectView:
         else:
             self.cur_volume_view = self.volumes[volume]
             self.cur_volume_view.dataLoaded()
+            cdir = self.cur_volume_view.direction
+            for i, ovv in enumerate(self.overlay_volume_views):
+                if ovv == self.cur_volume_view:
+                    # This is commented out, because overlay volume
+                    # views should only be changed via MainWindow.
+                    # Otherwise, memory will not be properly freed.
+                    # self.overlay_volume_view[i] = None
+                    print("ProjectView.setCurrent Volume: This should not happen!")
+                elif ovv is not None and ovv.direction != cdir:
+                    self.setDirection(ovv.volume, cdir)
+        if not no_notify:
+            self.notifyModified()
+
+    def setOverlay(self, index, volume, no_notify=False):
+        volume_view = None
+        if volume is not None:
+            volume_view = self.volumes[volume]
+        ovv = self.overlay_volume_views[index]
+        if ovv != volume_view:
+            if ovv is not None:
+                ovv.volume.unloadData(self)
+            if volume is not None:
+                volume.loadData(self)
+        self.overlay_volume_views[index] = volume_view
+        cdir = 0
+        if self.cur_volume_view is not None:
+            cdir = self.cur_volume_view.direction
+        if volume_view is not None and volume_view.direction != cdir:
+            volume_view.setDirection(cdir)
         if not no_notify:
             self.notifyModified()
 
@@ -696,3 +762,37 @@ class Project:
             if v.is_streaming:
                 return True
         return False
+
+    def removeFragment(self, fragment):
+        if fragment in self.fragments:
+            print("removing fragment", fragment.name, fragment.created)
+            # print(fragment)
+            self.fragments.remove(fragment)
+            for pv in self.project_views:
+                if fragment in pv.fragments:
+                    del pv.fragments[fragment]
+            self.notifyModified()
+
+    def removeVolumeFromDisk(self, volume):
+        # filename = self.volumes_path / (volume.name + '.volzarr')
+        filename = volume.path
+        print("deleting volume file", filename)
+        try:
+            if filename.exists():
+                filename.unlink()
+        except Exception as e:
+            print(f"Warning: Failed to remove file {filename}: {e}")
+        
+    def removeVolume(self, volume):
+        if volume in self.volumes:
+            # Normally one would think that volumes should not
+            # be removed from disk until the next time the project is
+            # saved.  However, khartes (for historical reasons) modifies
+            # the disk immediately when the user loads a nrrd or zarr file,
+            # so I've chosen to modify it immediately on delete as well.
+            self.removeVolumeFromDisk(volume)
+            self.volumes.remove(volume)
+            for pv in self.project_views:
+                if volume in pv.volumes:
+                    del pv.volumes[volume]
+            self.notifyModified()

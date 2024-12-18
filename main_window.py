@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
         QStatusBar, QStyle, QStyledItemDelegate,
         QTableView, QTabWidget, QTextEdit, QToolBar,
         QVBoxLayout, 
-        QWidget, 
+        QWidget, QRadioButton
         )
 from PyQt5.QtCore import (
         QAbstractTableModel, QCoreApplication, QObject,
@@ -48,10 +48,14 @@ from data_window import DataWindow, SurfaceWindow
 from project import Project, ProjectView
 from fragment import Fragment, FragmentsModel, FragmentView
 from trgl_fragment import TrglFragment, TrglFragmentView
+from umbilicus_fragment import UmbilicusFragment, UmbilicusExporter, UmbilicusImporter
 from base_fragment import BaseFragment, BaseFragmentView
 from volume import (
         Volume, VolumesModel, 
         DirectionSelectorDelegate,
+        ColormapSelectorDelegate,
+        OpacitySelectorDelegate,
+        MinMaxSelectorDelegate,
         ColorSelectorDelegate)
 from volume_zarr import CachedZarrVolume
 from ppm import Ppm
@@ -325,7 +329,7 @@ class ZInterpolationSetter(QWidget):
 
 class CreateFragmentButton(QPushButton):
     def __init__(self, main_window, parent=None):
-        super(CreateFragmentButton, self).__init__("Start New Fragment", parent)
+        super(CreateFragmentButton, self).__init__("New 3D Fragment", parent)
         self.main_window = main_window
         self.setToolTip("Once the new fragment is created use\nshift plus left mouse button to create new nodes")
         self.clicked.connect(self.onButtonClicked)
@@ -834,6 +838,53 @@ class ApplyOpacityCheckBox(QCheckBox):
     def updateValue(self, value):
         self.setChecked(value)
 
+class DeleteActiveFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(DeleteActiveFragmentButton, self).__init__("Delete Fragment", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.clicked.connect(self.onButtonClicked)
+        self.setToolTip("Delete the currently active fragment")
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.deleteActiveFragment()
+
+class DeleteActiveVolumeButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(DeleteActiveVolumeButton, self).__init__("Delete Volume", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.clicked.connect(self.onButtonClicked)
+        self.setToolTip("Delete the currently selected volume")
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.deleteActiveVolume()
+
+class Create25DFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(Create25DFragmentButton, self).__init__("New 2.5D Fragment", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setToolTip("Create a new 2.5D fragment for working with flat surfaces")
+        self.clicked.connect(self.onButtonClicked)
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.create25DFragment()
+
+class CreateUmbilicusFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(CreateUmbilicusFragmentButton, self).__init__("New Umbilicus", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setToolTip("Create a new umbilicus fragment for tracing scroll centers")
+        self.clicked.connect(self.onButtonClicked)
+        self.setEnabled(True)
+
+    def onButtonClicked(self):
+        self.main_window.createUmbilicusFragment()
 
     '''
     # class function
@@ -852,7 +903,6 @@ class ApplyOpacityCheckBox(QCheckBox):
         sb.singleStep = 0.1
         return sb
     '''
-
 
 class MainWindow(QMainWindow):
 
@@ -1076,6 +1126,10 @@ class MainWindow(QMainWindow):
         self.import_obj_action.triggered.connect(self.onImportObjButtonClick)
         self.import_obj_action.setEnabled(False)
 
+        self.import_umbilicus_action = QAction("Import Umbilicus files...", self)
+        self.import_umbilicus_action.triggered.connect(self.onImportUmbilicusButtonClick)
+        self.import_umbilicus_action.setEnabled(False)
+
         self.import_nrrd_action = QAction("Import NRRD files...", self)
         self.import_nrrd_action.triggered.connect(self.onImportNRRDButtonClick)
         self.import_nrrd_action.setEnabled(False)
@@ -1117,6 +1171,7 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.save_project_action)
         self.file_menu.addAction(self.save_project_as_action)
         self.file_menu.addAction(self.import_obj_action)
+        self.file_menu.addAction(self.import_umbilicus_action)
         self.file_menu.addAction(self.import_nrrd_action)
         self.file_menu.addAction(self.import_ppm_action)
         self.file_menu.addAction(self.import_tiffs_action)
@@ -1307,6 +1362,15 @@ class MainWindow(QMainWindow):
         # print("dark mode", self.isDarkMode())
         create_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
         hlayout.addWidget(create_frag)
+
+        create_25d_frag = Create25DFragmentButton(self)
+        create_25d_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
+        hlayout.addWidget(create_25d_frag)
+
+        create_umbilicus_frag = CreateUmbilicusFragmentButton(self)
+        create_umbilicus_frag.setStyleSheet("QPushButton { %s; padding: 5; }"%self.highlightedBackgroundStyle())
+        hlayout.addWidget(create_umbilicus_frag)
+
         label = QLabel("Active fragment:")
         # label.setStyleSheet("QLabel { background-color : beige; padding-left: 5}")
         label.setStyleSheet("QLabel { padding-left: 5}")
@@ -1321,6 +1385,8 @@ class MainWindow(QMainWindow):
         hlayout.addWidget(self.reparam_frag)
         self.copy_frag = CopyActiveFragmentButton(self)
         hlayout.addWidget(self.copy_frag)
+        self.delete_frag = DeleteActiveFragmentButton(self)
+        hlayout.addWidget(self.delete_frag)
 
         '''
         self.move_frag_up = MoveActiveFragmentAlongZButton(self, "Z ↑", -1)
@@ -1474,6 +1540,8 @@ class MainWindow(QMainWindow):
         vbv.setStyleSheet("QCheckBox { %s; padding: 5; }"%self.highlightedBackgroundStyle())
         # vbv.setPalette(palette)
         hlayout.addWidget(vbv)
+        self.delete_vol = DeleteActiveVolumeButton(self)
+        hlayout.addWidget(self.delete_vol)
         hlayout.addStretch()
         vlayout.addLayout(hlayout)
         self.volumes_table = QTableView()
@@ -1484,13 +1552,31 @@ class MainWindow(QMainWindow):
         # hh.setMinimumSectionSize(40)
         volumes_dsd = DirectionSelectorDelegate(self.volumes_table)
         volumes_csd = ColorSelectorDelegate(self.volumes_table)
+        volumes_cmsd = ColormapSelectorDelegate(self.volumes_table)
+        volumes_osd = OpacitySelectorDelegate(self.volumes_table)
+        volumes_mnsd = MinMaxSelectorDelegate(self.volumes_table)
+        volumes_mxsd = MinMaxSelectorDelegate(self.volumes_table)
         # self.direction_selector_delegate = dsd
         # need to attach these to "self" so they don't
         # get deleted on going out of scope
         self.volumes_csd = volumes_csd
+        self.volumes_cmsd = volumes_cmsd
         self.volumes_dsd = volumes_dsd
-        self.volumes_table.setItemDelegateForColumn(2, volumes_csd)
-        self.volumes_table.setItemDelegateForColumn(4, volumes_dsd)
+        self.volumes_osd = volumes_osd
+        self.volumes_mnsd = volumes_mnsd
+        self.volumes_mxsd = volumes_mxsd
+        cind = VolumesModel.columnIndex("Color")
+        cmind = VolumesModel.columnIndex("Colormap")
+        dind = VolumesModel.columnIndex("Dir")
+        oind = VolumesModel.columnIndex("Opacity")
+        mnind = VolumesModel.columnIndex("Min")
+        mxind = VolumesModel.columnIndex("Max")
+        self.volumes_table.setItemDelegateForColumn(cind, volumes_csd)
+        self.volumes_table.setItemDelegateForColumn(cmind, volumes_cmsd)
+        self.volumes_table.setItemDelegateForColumn(dind, volumes_dsd)
+        self.volumes_table.setItemDelegateForColumn(oind, volumes_osd)
+        self.volumes_table.setItemDelegateForColumn(mnind, volumes_mnsd)
+        self.volumes_table.setItemDelegateForColumn(mxind, volumes_mxsd)
         # print("edit triggers", int(self.volumes_table.editTriggers()))
         # self.volumes_table.setEditTriggers(QAbstractItemView.AllEditTriggers)
         # print("mss", hh.minimumSectionSize())
@@ -1816,6 +1902,7 @@ class MainWindow(QMainWindow):
         self.copy_frag.setEnabled(active)
         self.reparam_frag.setEnabled(active)
         self.retriang_frag.setEnabled(active)
+        self.delete_frag.setEnabled(active)
         '''
         self.move_frag_up.setEnabled(active)
         self.move_frag_down.setEnabled(active)
@@ -1852,6 +1939,138 @@ class MainWindow(QMainWindow):
         # mf = mfv.fragment
         mfv.moveAlongNormals(step)
         self.drawSlices()
+
+    def deleteActiveVolume(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot delete volume without project")
+            return
+        
+        cv = pv.cur_volume
+        if cv is None:
+            print("No currently selected volume")
+            return
+            
+        # Show confirmation dialog
+        reply = QMessageBox.question(self, 'Delete Volume',
+                               f'Are you sure you want to remove volume "{cv.name}" from the project?',
+                               QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.volumes_table.model().beginResetModel()
+            
+            # Clear current volume if it's the one being deleted
+            if pv.cur_volume == cv:
+                self.setVolume(None)
+                
+            # Clear any overlays using this volume
+            for i, ovv in enumerate(pv.overlay_volume_views):
+                if ovv is not None and ovv.volume == cv:
+                    self.setOverlay(i, None)
+        
+            
+            self.app.processEvents()
+            pv.project.removeVolume(cv)
+            self.volumes_table.model().endResetModel()
+            pv.project.notifyModified()
+
+    def create25DFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot create new fragment without project")
+            return
+        vv = self.volumeView()
+        if vv is None:
+            print("Warning, cannot create new fragment without volume view set")
+            return
+
+        stem = "frag25d"
+        name = self.uniqueFragmentName(stem)
+        if name is None:
+            print("Can't create unique fragment name from stem", stem)
+            return
+
+        frag = Fragment(name, vv.direction)  # Using regular Fragment class but with 2.5D flag
+        frag.setColor(Utils.getNextColor(), no_notify=True)
+        frag.valid = True
+        frag.is_25d = True  # Special flag to identify 2.5D fragments
+        print("created 2.5D fragment %s"%frag.name)
+        
+        self.fragments_table.model().beginResetModel()
+        pv.project.addFragment(frag)
+        self.setFragments()
+        self.fragments_table.model().endResetModel()
+        
+        exclusive = (len(pv.activeFragmentViews(unaligned_ok=True)) == 1)
+        self.setFragmentActive(frag, True, exclusive)
+        self.enableWidgetsIfActiveFragment()
+        
+        self.app.processEvents()
+        index = pv.project.fragments.index(frag)
+        self.fragments_table.model().scrollToRow(index)
+
+    def createUmbilicusFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot create new fragment without project")
+            return
+        vv = self.volumeView()
+        if vv is None:
+            print("Warning, cannot create new fragment without volume view set")
+            return
+
+        stem = "umbilicus"
+        name = self.uniqueFragmentName(stem)
+        if name is None:
+            print("Can't create unique fragment name from stem", stem)
+            return
+
+        frag = UmbilicusFragment(name, vv.direction)
+        frag.setColor(Utils.getNextColor(), no_notify=True)
+        frag.valid = True
+        print("created umbilicus fragment %s"%frag.name)
+        
+        self.fragments_table.model().beginResetModel()
+        pv.project.addFragment(frag)
+        self.setFragments()
+        self.fragments_table.model().endResetModel()
+        
+        exclusive = (len(pv.activeFragmentViews(unaligned_ok=True)) == 1)
+        self.setFragmentActive(frag, True, exclusive)
+        self.enableWidgetsIfActiveFragment()
+        
+        self.app.processEvents()
+        index = pv.project.fragments.index(frag)
+        self.fragments_table.model().scrollToRow(index)
+
+    def deleteActiveFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot delete fragment without project")
+            return
+        
+        mfv = pv.mainActiveFragmentView(unaligned_ok=True)
+        if mfv is None:
+            print("No currently active fragment")
+            return
+        
+        mf = mfv.fragment
+        
+        # Show confirmation dialog
+        reply = QMessageBox.question(self, 'Delete Fragment',
+                                   f'Are you sure you want to delete fragment "{mf.name}"?',
+                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            # The next time the project is saved,
+            # the deleted fragment will not be saved.
+            # No need to delete it from disk before then.
+
+            # Remove from project
+            pv.project.removeFragment(mf)
+            self.setFragments()
+            self.fragments_table.model().endResetModel()
+            self.enableWidgetsIfActiveFragment()
 
     def copyActiveFragment(self):
         pv = self.project_view
@@ -1927,28 +2146,22 @@ class MainWindow(QMainWindow):
         if name is None:
             print("Can't create unique fragment name from stem", stem)
             return
-        # print("color",color)
-        # frag = Fragment(name, vv.direction)
+
+        # Using TrglFragment for 3D fragments
         frag = TrglFragment(name)
         frag.setColor(Utils.getNextColor(), no_notify=True)
         frag.valid = True
-        print("created fragment %s"%frag.name)
+        print("created 3D fragment %s"%frag.name)
+        
         self.fragments_table.model().beginResetModel()
-        # print("start cafv")
-        # if len(pv.activeFragmentViews(unaligned_ok=True)) == 1:
-        #     pv.clearActiveFragmentViews()
-        # print("end cafv")
         pv.project.addFragment(frag)
         self.setFragments()
         self.fragments_table.model().endResetModel()
-        # fv = pv.fragments[frag]
-        # fv.active = True
-        # self.export_mesh_action.setEnabled(len(pv.activeFragmentViews(unaligned_ok=True)) > 0)
+        
         exclusive = (len(pv.activeFragmentViews(unaligned_ok=True)) == 1)
         self.setFragmentActive(frag, True, exclusive)
         self.enableWidgetsIfActiveFragment()
-        # need to make sure new fragment is added to table
-        # before calling scrollToRow
+        
         self.app.processEvents()
         index = pv.project.fragments.index(frag)
         self.fragments_table.model().scrollToRow(index)
@@ -2513,6 +2726,26 @@ class MainWindow(QMainWindow):
         parent = path.parent
         self.settingsSaveDirectory(str(parent), "ppm_")
 
+    def onImportUmbilicusButtonClick(self, s):
+        """Import an umbilicus file (.obj or .txt) and create a new umbilicus fragment"""
+        if not self.project_view:
+            return
+            
+        # Use UmbilicusImporter to handle file import
+        importer = UmbilicusImporter(self)
+        fragment = importer.import_file()
+        
+        if fragment is not None:
+            # Add fragment to project
+            pv = self.project_view
+            proj = pv.project
+            proj.addFragment(fragment)
+            pv.updateFragmentViews()
+            self.fragments_table.model().endResetModel()
+            
+            # Update display
+            pv.notifyModified()
+
     def onImportObjButtonClick(self, s):
         print("import obj clicked")
         if self.project_view is None or self.project_view.project is None:
@@ -2567,6 +2800,8 @@ class MainWindow(QMainWindow):
         pv.updateFragmentViews()
         self.fragments_table.model().endResetModel()
 
+    
+
     def loadObjFile(self, fname):
         trgl_frags = TrglFragment.load(fname)
         if trgl_frags is None or len(trgl_frags) == 0:
@@ -2614,6 +2849,13 @@ class MainWindow(QMainWindow):
         if len(frags) == 0:
             print("No active fragment")
             return
+            
+        # Handle umbilicus fragments differently
+        if frags[0].type == Fragment.Type.UMBILICUS:
+            self.exportUmbilicusFragment(frags[0], fvs[0])
+            return
+            
+        # Regular mesh export for other fragment types
         sdir = self.settingsGetDirectory("mesh_")
         if sdir is None:
             sdir = self.settingsGetDirectory()
@@ -2669,6 +2911,11 @@ class MainWindow(QMainWindow):
             msg.exec()
 
         self.settingsSaveDirectory(str(pname.parent), "mesh_")
+        
+    def exportUmbilicusFragment(self, fragment, fragment_view):
+        """Export umbilicus fragment using the UmbilicusExporter"""
+        exporter = UmbilicusExporter(self)
+        exporter.export_fragment(fragment, fragment_view)
 
     def onImportTiffsButtonClick(self, s):
         self.tiff_loader.show()
@@ -2757,6 +3004,10 @@ class MainWindow(QMainWindow):
                 cur_volume = list(spv.keys())[0]
         # print("setting volume")
         self.setVolume(cur_volume, no_notify=True)
+        for i, ovv in enumerate(pv.overlay_volume_views):
+            if ovv is None:
+                continue
+            self.setOverlay(i, ovv.volume, no_notify=True)
         # print("volume set")
         # intentionally called a second time to use
         # cur_volume information to set fragment view volume
@@ -2841,9 +3092,9 @@ class MainWindow(QMainWindow):
         if self.project_view is None:
             print("Warning: setting direction but no project set")
             return
-        self.volumes_table.model().beginResetModel()
+        # self.volumes_table.model().beginResetModel()
         self.project_view.setDirection(volume, direction)
-        self.volumes_table.model().endResetModel()
+        # self.volumes_table.model().endResetModel()
         if volume == self.project_view.cur_volume:
             self.drawSlices()
         # don't need to check if volume is cur_volume because 
@@ -2917,8 +3168,78 @@ class MainWindow(QMainWindow):
             self.app.processEvents()
             return loading
 
+    def setOverlay(self, index, volume, no_notify=False):
+        pv = self.project_view
+        # TODO: if volume is same as any other overlay, set that overlay
+        # to None.   
+        # If volume is the same as pv.cur_volume, set cur_volume to None.
+        # Main question: where exactly to do this?
+        if volume is not None:
+            cv = pv.cur_volume
+            if cv == volume:
+                self.setVolume(None, no_notify=no_notify)
+            for i, ovv in enumerate(pv.overlay_volume_views):
+                if i == index:
+                    continue
+                if ovv is not None and ovv.volume == volume:
+                    self.setOverlay(i, None, no_notify=no_notify)
+
+        if volume is not None and (volume.data is None or volume.is_zarr):
+            # Note that this won't get called multiple times,
+            # because the "volume is not None" clause protects it.
+            loading = self.showLoading()
+
+        self.volumes_table.model().beginResetModel()
+        old_vv = pv.overlay_volume_views[index]
+        if old_vv is not None and volume is not None and old_vv != volume:
+            # Force GLSurfaceWindow to let go of old volume's data,
+            # so that the memory can be reclaimed
+            vv = None
+            self.depth.setOverlayVolumeView(index, vv);
+            self.xline.setOverlayVolumeView(index, vv);
+            self.inline.setOverlayVolumeView(index, vv);
+            self.surface.setOverlayVolumeView(index, vv);
+            self.drawSlices()
+            self.app.processEvents()
+        pv.setOverlay(index, volume, no_notify)
+        self.volumes_table.model().endResetModel()
+        vv = pv.overlay_volume_views[index]
+        self.depth.setOverlayVolumeView(index, vv);
+        self.xline.setOverlayVolumeView(index, vv);
+        self.inline.setOverlayVolumeView(index, vv);
+        self.surface.setOverlayVolumeView(index, vv);
+        self.app.processEvents()
+        self.drawSlices()
+
+    def setColormapIsIndicator(self, volume_view, flag):
+        if volume_view.colormap_is_indicator == flag:
+            return
+        volume_view.setColormapIsIndicator(flag)
+        '''
+        pv = self.project_view
+        if volume_view == pv.cur_volume:
+            self.surface.setVolumeView(volume_view);
+        else:
+            for i, ovv in enumerate(pv.overlay_volume_views):
+                if volume_view == ovv:
+                    self.surface.setOverlayVolumeView(i, volume_view)
+                    break
+        '''
+        # TODO: setting the cursor doesn't seem to work!
+        self.app.setOverrideCursor(QCursor(Qt.WaitCursor))
+        self.app.processEvents()
+        self.drawSlices()
+        self.app.restoreOverrideCursor()
+
     def setVolume(self, volume, no_notify=False):
         pv = self.project_view
+        # TODO: if volume is same as any overlay, set that overlay
+        # to None.   Main question: where exactly to do this?
+        if volume is not None:
+            for i, ovv in enumerate(pv.overlay_volume_views):
+                if ovv is not None and ovv.volume == volume:
+                    self.setOverlay(i, None, no_notify=no_notify)
+
         if volume is not None and (volume.data is None or volume.is_zarr):
             loading = self.showLoading()
 
@@ -2971,9 +3292,32 @@ class MainWindow(QMainWindow):
         self.drawSlices()
 
     def setVolumeViewColor(self, volume_view, color):
-        self.volumes_table.model().beginResetModel()
+        # self.volumes_table.model().beginResetModel()
         volume_view.setColor(color)
-        self.volumes_table.model().endResetModel()
+        # self.volumes_table.model().endResetModel()
+        self.drawSlices()
+
+    def setVolumeViewColormap(self, volume_view, colormap_name):
+        # self.volumes_table.model().beginResetModel()
+        # volume_view.colormap_name = colormap_name
+        volume_view.setColormap(colormap_name)
+        # self.volumes_table.model().endResetModel()
+        self.drawSlices()
+
+    def setVolumeViewOpacity(self, volume_view, opacity):
+        # self.volumes_table.model().beginResetModel()
+        # volume_view.colormap_name = colormap_name
+        # print("svvo", volume_view.opacity, opacity)
+        volume_view.setOpacity(opacity)
+        # self.volumes_table.model().endResetModel()
+        self.drawSlices()
+
+    def setVolumeViewColormapIntMin(self, volume_view, value):
+        volume_view.setColormapIntMin(value)
+        self.drawSlices()
+
+    def setVolumeViewColormapIntMax(self, volume_view, value):
+        volume_view.setColormapIntMax(value)
         self.drawSlices()
 
     def setFragments(self):
@@ -3055,6 +3399,8 @@ class MainWindow(QMainWindow):
         if self.project_view == None:
             return
         self.setVolume(None, no_notify=True)
+        for i in range(ProjectView.overlay_count):
+            self.setOverlay(i, None, no_notify=True)
         self.live_zsurf_update = True
         self.live_zsurf_update_button.setChecked(self.live_zsurf_update)
         self.setFragments()
@@ -3090,6 +3436,7 @@ class MainWindow(QMainWindow):
         self.import_nrrd_action.setEnabled(True)
         self.import_ppm_action.setEnabled(True)
         self.import_obj_action.setEnabled(True)
+        self.import_umbilicus_action.setEnabled(True)
         self.import_tiffs_action.setEnabled(True)
         self.attach_zarr_action.setEnabled(True)
         self.attach_stream_action.setEnabled(True)
@@ -3101,6 +3448,8 @@ class MainWindow(QMainWindow):
         project_view = ProjectView(project)
         self.setProjectView(project_view)
         self.setVolume(None, no_notify=True)
+        for i in range(ProjectView.overlay_count):
+            self.setOverlay(i, None, no_notify=True)
         self.setFragments()
         # self.setCurrentFragment(None)
         self.drawSlices()
