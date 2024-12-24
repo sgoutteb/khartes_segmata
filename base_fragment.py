@@ -42,16 +42,34 @@ class BaseFragment:
 
     # class function
     def saveList(frags, path, stem):
-        infos = []
+        # Split into 3D vs other fragments
+        trgl_frags = []
+        other_frags = []
+        
         for frag in frags:
-            if not hasattr(frag, "toDict"):
-                continue
-            info = frag.toDict()
-            infos.append(info)
-        info_txt = json.dumps(infos, indent=4)
-        file = path / (stem + ".json")
-        print("writing to",file)
-        file.write_text(info_txt, encoding="utf8")
+            if frag.type == BaseFragment.Type.TRGL_FRAGMENT:
+                trgl_frags.append(frag)
+            else:
+                other_frags.append(frag)
+        
+        # Handle 3D fragments with their own logic
+        if trgl_frags:
+            from trgl_fragment import TrglFragment
+            TrglFragment.saveList(trgl_frags, path, stem)
+            
+        # Combine 2.5D and Umbilicus fragments into all.json
+        if other_frags:
+            infos = []
+            for frag in other_frags:
+                if not hasattr(frag, "toDict"):
+                    continue
+                info = frag.toDict()
+                infos.append(info)
+            if infos:
+                info_txt = json.dumps(infos, indent=4)
+                file = path / (stem + ".json")
+                print("writing to", file)
+                file.write_text(info_txt, encoding="utf8")
 
     def meshExportNeedsInfill(self):
         return False
