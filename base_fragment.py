@@ -2,6 +2,7 @@ from utils import Utils
 import numpy as np
 from enum import Enum
 from PyQt5.QtGui import QColor
+import json
 
 class BaseFragment:
     class Type(Enum):
@@ -41,16 +42,16 @@ class BaseFragment:
 
     # class function
     def saveList(frags, path, stem):
-        class_lists = {}
+        infos = []
         for frag in frags:
-            print("bsl", frag.name)
-            # print(type(frag))
-            t = type(frag)
-            # t.asdf()
-            l = class_lists.setdefault(t, [])
-            l.append(frag)
-        for cl, l in class_lists.items():
-            cl.saveList(l, path, stem)
+            if not hasattr(frag, "toDict"):
+                continue
+            info = frag.toDict()
+            infos.append(info)
+        info_txt = json.dumps(infos, indent=4)
+        file = path / (stem + ".json")
+        print("writing to",file)
+        file.write_text(info_txt, encoding="utf8")
 
     def meshExportNeedsInfill(self):
         return False
