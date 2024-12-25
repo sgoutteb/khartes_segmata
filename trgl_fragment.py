@@ -287,6 +287,9 @@ class TrglFragment(BaseFragment):
 
             for i, pt in enumerate(tpts):
                 print("vt %f %f"%(pt[0], pt[1]), file=of)
+                if i < 2:
+                    print("vt %f %f"%(pt[0], pt[1]))
+
         print("# Faces: %d"%len(self.trgls), file=of)
         for trgl in self.trgls:
             ostr = "f"
