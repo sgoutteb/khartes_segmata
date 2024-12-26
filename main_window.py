@@ -3169,6 +3169,8 @@ class MainWindow(QMainWindow):
             return loading
 
     def setOverlay(self, index, volume, no_notify=False):
+        # print("setOverlay")
+        # time.sleep(2)
         pv = self.project_view
         # TODO: if volume is same as any other overlay, set that overlay
         # to None.   
@@ -3210,6 +3212,7 @@ class MainWindow(QMainWindow):
         self.surface.setOverlayVolumeView(index, vv);
         self.app.processEvents()
         self.drawSlices()
+        # print("so 8")
 
     def setColormapIsIndicator(self, volume_view, flag):
         if volume_view.colormap_is_indicator == flag:
@@ -3232,6 +3235,8 @@ class MainWindow(QMainWindow):
         self.app.restoreOverrideCursor()
 
     def setVolume(self, volume, no_notify=False):
+        # print("setVolume")
+        # time.sleep(2)
         pv = self.project_view
         # TODO: if volume is same as any overlay, set that overlay
         # to None.   Main question: where exactly to do this?
@@ -3526,6 +3531,10 @@ class MainWindow(QMainWindow):
                 w.dwKeyReleaseEvent(e)
 
     def drawSlices(self):
+        # calling processEvents
+        # prevents a crash in Windows when clicking on the "Volumes" tab
+        # while volumes and overlays are loading
+        self.app.processEvents()
         self.depth.drawSlice()
         self.xline.drawSlice()
         self.inline.drawSlice()

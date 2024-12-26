@@ -832,6 +832,7 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         self.setDefaultViewport()
         
     def paintGL(self):
+        # print("paintGL 0")
         self.checkAtlases()
         if self.volume_view is None:
             return
@@ -846,6 +847,7 @@ class GLSurfaceWindowChild(GLDataWindowChild):
         f.glClearColor(.1,.1,.1,1.)
         f.glClear(pygl.GL_COLOR_BUFFER_BIT)
         self.paintSlice()
+        # print("paintGL end")
 
     def buildPrograms(self):
         self.xyz_program = self.buildProgram(xyz_code)
@@ -1012,6 +1014,7 @@ class GLSurfaceWindowChild(GLDataWindowChild):
             dw.drawTrackingCursor(data, alpha16)
 
     def paintSlice(self):
+        # print("fps 0")
         timera = Utils.Timer()
         timera.active = False
         timerb = Utils.Timer()
@@ -1181,6 +1184,7 @@ class GLSurfaceWindowChild(GLDataWindowChild):
 
         timerb.time("done")
         # print()
+        # print("fps end")
 
     def printBlocks(self, blocks):
         for block in blocks:

@@ -2208,6 +2208,7 @@ class GLDataWindowChild(QOpenGLWidget):
         return unit
 
     def paintSlice(self):
+        # print("ps 0", self.gldw.axis)
         dw = self.gldw
         volume_view = dw.volume_view
         # self.clearOldColormapTextures()
@@ -2341,6 +2342,7 @@ class GLDataWindowChild(QOpenGLWidget):
         # Putting getPicks here seems to fix the problems
         # caused by synching between GPU and CPU
         self.getPicks()
+        # print("ps end")
 
     def closeEvent(self, e):
         print("glw widget close event")
