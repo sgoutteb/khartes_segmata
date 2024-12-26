@@ -371,7 +371,7 @@ class GLDataWindow(DataWindow):
         mfv = pv.mainActiveFragmentView(unaligned_ok=True)
         if mfv is None:
             return None
-        if mfv is not None and dw.indexed_fvs is not None and mfv in indexed_fvs:
+        if dw.indexed_fvs is not None and mfv in indexed_fvs:
             mfvi = indexed_fvs.index(mfv)
         if mfvi < 0:
             return None
@@ -405,11 +405,13 @@ class GLDataWindow(DataWindow):
             matches = matches[inrange]
             # print("after", matches.shape)
         if len(matches) == 0:
+            # print("len stpoints", len(mfv.stpoints))
             if not try_hard:
                 return None
             if mfv.stpoints is None or len(mfv.stpoints) == 0:
                 # if there are no current points at all,
                 # create one
+                print("created first point")
                 return np.zeros(3, dtype=np.float64)
             fvs = np.array(self.cur_frag_pts_fv)
             # print("fvs", fvs)

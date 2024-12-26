@@ -1192,16 +1192,37 @@ class TrglFragmentView(BaseFragmentView):
         # print("ra2", len(stp), len(all_pts), len(self.trgls()))
 
     def rebuildStPoints(self):
+        self.prev_pt_count = 0
+        self.setScaledTexturePoints()
+        # print("rebuildStPoints", len(self.stpoints))
+        self.fragment.notifyModified()
+
+    def rebuildStPointsOld(self):
         # self.setLocalPoints(True, False)
-        self.stpoints = None
+        old_stpoints = self.stpoints
+        self.stpoints = np.zeros((0,2))
         # print("rsp set stpoints to None")
         self.setScaledTexturePoints()
+        # setScaledTexturePoints will leave self.stpoints
+        # unchanged if either:
+        # gpoint count is the same as previous gpoint count, or
+        # triangulation fails
+        if len(old_stpoints) > len(self.stpoints):
+            if len(self.stpoints) > 0:
+                print("rebuildStPoints: bad stpoints", len(old_stpoints), len(self.stpoints))
+            else:
+                print("rebuildStPoints: no stpoints")
+            self.stpoints = old_stpoints
+            return
+        else:
+            print("rebuildStPoints succeeded", len(self.stpoints))
         self.fragment.notifyModified()
 
     def reparameterize(self):
         self.stpoints = None
         # print("rpm set stpoints to None")
-        self.setScaledTexturePoints()
+        # self.setScaledTexturePoints()
+        self.rebuildStPoints()
         xyzs = self.vpoints[:,0:3]
         trgls = self.trgls()
         # print("rt before")
@@ -1334,7 +1355,8 @@ class TrglFragmentView(BaseFragmentView):
             # print("d")
             timer.time("update xyz")
 
-        if update_st:
+        # check len in case stpoints has not been populated yet
+        if update_st and len(self.stpoints) > index:
             self.stpoints[index, :] = new_stxy
             self.all_stpoints[index, :] = new_stxy
             uv = self.stxyToUv(new_stxy)
