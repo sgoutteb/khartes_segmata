@@ -179,7 +179,7 @@ class MinMaxSelectorDelegate(QtWidgets.QStyledItemDelegate):
         sb.setSingleStep(1)
         sb.valueChanged.connect(lambda d: self.onValueChanged(d, sb, index), Qt.QueuedConnection)
         sb.kh_value = -1.
-        sb.setValue(1)
+        sb.setValue(128)
         # print("ce", sb.value())
         return sb
 
