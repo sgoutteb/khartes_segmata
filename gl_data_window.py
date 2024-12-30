@@ -1404,6 +1404,7 @@ class GLDataWindowChild(QOpenGLWidget):
         self.fragment_vaos = {}
         self.colormap_textures = {}
         self.prev_pv = None
+        self.painting_slice = False
 
         # synchronous mode is said to be much slower
         # self.logging_mode = QOpenGLDebugLogger.SynchronousLogging
@@ -1526,10 +1527,15 @@ class GLDataWindowChild(QOpenGLWidget):
         if volume_view is None :
             return
         
+        if self.painting_slice:
+            print("GLDataWindowChild: already painting slice!")
+            return
+        self.painting_slice = True
         f = self.gl
         f.glClearColor(.6,.3,.3,1.)
         f.glClear(pygl.GL_COLOR_BUFFER_BIT)
         self.paintSlice()
+        self.painting_slice = False
 
     # assumes the image is from fragment_fbo, and that
     # fragment_fbo was created with the RGBA16 format
@@ -1706,6 +1712,25 @@ class GLDataWindowChild(QOpenGLWidget):
             vao = fvao.getVao()
             vao.bind()
 
+            '''
+              File "C:/Users//Desktop/Progs/Vesuvius/khartes/gl_data_window.py", line 1532, in paintGL
+    self.paintSlice()
+  File "C:/Users//Desktop/Progs/Vesuvius/khartes/gl_data_window.py", line 2310, in paintSlice
+    self.drawFragments()
+  File "C:/Users//Desktop/Progs/Vesuvius/khartes/gl_data_window.py", line 1709, in drawFragments
+    f.glDrawElements(pygl.GL_TRIANGLES, fvao.trgl_index_size,
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:/Anaconda3/envs/ch/Lib/site-packages/OpenGL/latebind.py", line 41, in __call__
+    return self._finalCall( *args, **named )
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:/Anaconda3/envs/ch/Lib/site-packages/OpenGL/wrapper.py", line 849, in wrapperCall
+    result = wrappedOperation( *cArguments )
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: exception: stack overflow
+
+            '''
+
+            # print("tis", fvao.trgl_index_size)
             f.glDrawElements(pygl.GL_TRIANGLES, fvao.trgl_index_size, 
                              pygl.GL_UNSIGNED_INT, VoidPtr(0))
             vao.release()
@@ -1862,6 +1887,7 @@ class GLDataWindowChild(QOpenGLWidget):
         QOpenGLFramebufferObject.bindDefault()
         # self.getPicks()
         # self.frag_last_change = time.time()
+        # print("exiting drawFragment")
 
     # The toImage() call in this routine can be time-consuming,
     # since it requires the GPU to pause and export data.
@@ -2307,7 +2333,9 @@ class GLDataWindowChild(QOpenGLWidget):
         top_label_tex.bind()
         self.slice_program.setUniformValue(oloc, tunit)
 
+        # print("df before")
         self.drawFragments()
+        # print("df after")
 
         self.slice_program.bind()
         floc = self.slice_program.uniformLocation("fragments_sampler")

@@ -1206,6 +1206,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
 
         self.exiting = False
+        self.drawing_slices = False
 
         # is this needed?
         self.volumes_model = VolumesModel(None, self)
@@ -3531,14 +3532,26 @@ class MainWindow(QMainWindow):
                 w.dwKeyReleaseEvent(e)
 
     def drawSlices(self):
+        if self.drawing_slices:
+            # print("MainWindow: already drawing slices!")
+            # prevent recursion
+            return
+        self.drawing_slices = True
+        # print("ds 1")
         # calling processEvents
         # prevents a crash in Windows when clicking on the "Volumes" tab
         # while volumes and overlays are loading
         self.app.processEvents()
+        # print("ds 2")
         self.depth.drawSlice()
+        # print("ds 3")
         self.xline.drawSlice()
+        # print("ds 4")
         self.inline.drawSlice()
+        # print("ds 5")
         self.surface.drawSlice()
+        # print("ds 6")
+        self.drawing_slices = False
 
     def getVoxelSizeUm(self):
         if self.project_view is None:

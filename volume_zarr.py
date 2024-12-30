@@ -265,8 +265,16 @@ class TransposedDataView():
                 alls.append(s)
 
         if len(self.data.shape) == 3:
-            result = self.data[alls[0],alls[1],alls[2]]
-            result = result[:,:,:,np.newaxis]
+            try:
+                result = self.data[alls[0],alls[1],alls[2]]
+                result = result[:,:,:,np.newaxis]
+            except Exception as e:
+                print("----")
+                print("selection", selection)
+                print("alls", alls)
+                print("TransposedDataView: zarr exception", e)
+                print("----")
+                return None
         else:
             result = self.data[alls[0],alls[1],alls[2],alls[3]]
         input_dtype = self.data.dtype
