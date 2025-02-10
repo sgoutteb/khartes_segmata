@@ -99,7 +99,7 @@ class TrglFragment(BaseFragment):
             tvtrg = np.array(tvtrgl, dtype=np.int32)
         else:
             vtrg = np.zeros((0,3), dtype=np.int32)
-            vtrg = np.zeros((0,3), dtype=np.int32)
+            tvtrg = np.zeros((0,3), dtype=np.int32)
         if len(vrtl) > 0:
             vrt = np.array(vrtl, dtype=np.float32)
         else:
@@ -111,7 +111,11 @@ class TrglFragment(BaseFragment):
         otvrt = np.zeros((len(vrt), 2), dtype=np.float32)
         # otvrt will contain uv values that are listed
         # in the same order as the xyz values in vrt.
+        # print(vtrg[:3])
+        # print(tvtrg[:3])
         otvrt[vtrg.flatten()] = tvrt[tvtrg.flatten()]
+        # print("otvrt")
+        # print(otvrt[:5])
         
         if frag_name == "":
         #     frag_name = name.replace("_",":").replace("p",".")
@@ -177,7 +181,9 @@ class TrglFragment(BaseFragment):
         if len(trgl_frag.gtpoints) > 0:
             tmp_fv = trgl_frag.createView(None)
             tmp_fv.setScaledTexturePoints(similar=False)
+            tmp_fv.printGtpoints("load before")
             trgl_frag.gtpoints = tmp_fv.stpoints
+            tmp_fv.printGtpoints("load after")
 
         return [trgl_frag]
 
@@ -332,10 +338,10 @@ class TrglFragment(BaseFragment):
                     tpts[tpts<0.] = -1.e+3
                     tpts[(tpts<0).any(axis=1), :] = -1.e+3
                 '''
-
+    
             for i, pt in enumerate(tpts):
                 print("vt %f %f"%(pt[0], pt[1]), file=of)
-                if i < 2:
+                if i < 2 or i > len(tpts)-3:
                     print("vt %f %f"%(pt[0], pt[1]))
 
         print("# Faces: %d"%len(self.trgls), file=of)
@@ -1318,7 +1324,9 @@ class TrglFragmentView(BaseFragmentView):
         if adjusted_sts is None:
             print("reparameterize failed!")
             return
+        self.printGtpoints("reparam before")
         self.fragment.gtpoints = adjusted_sts
+        self.printGtpoints("reparam after")
         # print(adjusted_sts)
         self.stpoints = None
         # TrglPointSet.findSpikes(xyzs, trgls, "after reparam")
@@ -1717,10 +1725,20 @@ class TrglFragmentView(BaseFragmentView):
         self.fragment.trgls = o2n[trgls]
         old_outside = self.stpoints[npt:].copy()
         self.fragment.gpoints = self.fragment.gpoints[~free_flag]
+        self.printGtpoints("dfp before")
         self.fragment.gtpoints = self.fragment.gtpoints[~free_flag]
+        self.printGtpoints("dfp after")
         self.stpoints = self.stpoints[~free_flag]
         self.all_stpoints = np.concatenate((self.stpoints, old_outside))
         self.setLocalPoints(True, False)
+
+    def printGtpoints(self, label=""):
+        # Do nothing
+        return
+        tpts = self.fragment.gtpoints
+        print(label, "printing gtpoints", tpts.shape)
+        print(tpts[:3])
+        print(tpts[-3:])
 
     def deletePointByIndex(self, index):
         if index < 0:

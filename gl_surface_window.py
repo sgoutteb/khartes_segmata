@@ -1868,6 +1868,9 @@ class Chunk:
         # padded data rectangle
         pdr = self.padRect(dr, self.pad)
         # size of the data on the data's level (3 coords: nx, ny, nz)
+        if len(self.atlas.dsz) <= dl:
+            print("Problem in getDataFromDisk!")
+            print(self.atlas.dsz, dl)
         dsz = self.atlas.dsz[dl]
         all_dr = ((0, 0, 0), (dsz[0], dsz[1], dsz[2]))
         # intersection of the padded data rectangle with the data
@@ -2476,11 +2479,19 @@ class Atlas:
                 break
             chunk.in_use = False
 
+        vol = self.volume_view.volume
+        if vol.is_zarr:
+            nlevels = len(vol.levels)
+        else:
+            nlevels = 1
+
         # reverse to make lowest-resolution blocks
         # are loaded first
         for zblock in reversed(zblocks):
             block = zblock[:3]
             zoom_level = zblock[3]
+            if zoom_level >= nlevels:
+                continue
             key = self.key(block, zoom_level)
             chunk = self.chunks.get(key, None)
             # If the data chunk is not currently stored in the atlas:
