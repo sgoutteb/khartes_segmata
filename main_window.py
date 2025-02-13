@@ -3538,7 +3538,8 @@ class MainWindow(QMainWindow):
             return
         self.drawing_slices = True
         # print("ds 1")
-        # calling processEvents
+        # calling processEvents before and after
+        # the drawSlice calls
         # prevents a crash in Windows when clicking on the "Volumes" tab
         # while volumes and overlays are loading
         self.app.processEvents()
@@ -3551,6 +3552,8 @@ class MainWindow(QMainWindow):
         # print("ds 5")
         self.surface.drawSlice()
         # print("ds 6")
+        self.app.processEvents()
+        # print("ds 7")
         self.drawing_slices = False
 
     def getVoxelSizeUm(self):
