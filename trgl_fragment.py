@@ -1,6 +1,7 @@
 import math
 import json
 import numpy as np
+import time
 
 from pathlib import Path
 from collections import deque
@@ -142,6 +143,9 @@ class TrglFragment(BaseFragment):
             ts = Utils.vcToTimestamp(name)
             if ts is not None:
                 created = ts
+            else:
+                # make sure each imported surface has a unique time stamp
+                time.sleep(2)
         if created != "":
             trgl_frag.created = created
         trgl_frag.params = {}
