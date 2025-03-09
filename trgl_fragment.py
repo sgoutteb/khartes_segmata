@@ -184,7 +184,8 @@ class TrglFragment(BaseFragment):
         # print("tindexes", BaseFragment.trglsAroundPoint(100, trgl_frag.trgls))
         if len(trgl_frag.gtpoints) > 0:
             tmp_fv = trgl_frag.createView(None)
-            tmp_fv.setScaledTexturePoints(similar=False)
+            tmp_fv.vpoints = trgl_frag.gpoints
+            tmp_fv.setScaledTexturePoints(similar=False, recurse=3)
             tmp_fv.printGtpoints("load before")
             trgl_frag.gtpoints = tmp_fv.stpoints
             tmp_fv.printGtpoints("load after")
@@ -653,7 +654,7 @@ class TrglFragmentView(BaseFragmentView):
     
     '''
 
-    def setScaledTexturePoints(self, similar=True):
+    def setScaledTexturePoints(self, similar=True, recurse=0):
         # similar=False
         # traceback.print_stack()
         f = self.fragment
@@ -862,7 +863,7 @@ class TrglFragmentView(BaseFragmentView):
         mden = uu*vv - uv*uv
         mden2 = uu+vv
 
-        # sn = n
+        sn = len(u)
         # print("mden", mden/len(u))
         # print("uu vv uv", uu/sn, uv/sn, vv/sn)
         # print("uxy vxy", ux/sn, uy/sn, vx/sn, vy/sn)
@@ -874,6 +875,11 @@ class TrglFragmentView(BaseFragmentView):
             print(txyzs)
             '''
             print("mden, mden2", mden, mden2)
+            print("recurse", recurse)
+            if recurse > 0:
+                self.reparameterize()
+                self.prev_pt_count = 0
+                self.setScaledTexturePoints(similar=similar, recurse=recurse-1)
             return
 
         # print("gt min max", gtp.min(axis=0), gtp.max(axis=0))
@@ -882,7 +888,7 @@ class TrglFragmentView(BaseFragmentView):
         stp = np.zeros_like(gtps)
 
         if similar:
-            # print("similar")
+            print("similar")
             abcds = []
 
             a = (ux - vy)/mden2
@@ -971,6 +977,15 @@ class TrglFragmentView(BaseFragmentView):
         xyzmin = oxyzs.min(axis=0)
         xyzmax = oxyzs.max(axis=0)
         # print("xyz min max", xyzmin, xyzmax)
+        if max(abs(stmax[1]), abs(stmin[1])) > 3*abs(xyzmax[2]):
+            print("recurse", recurse)
+            print(stmin, stmax, xyzmin, xyzmax)
+            if recurse > 0:
+                print("setScaledTexturePoints: problem, reparameterizing surface", f.name, recurse)
+                self.reparameterize()
+                self.prev_pt_count = 0
+                self.setScaledTexturePoints(similar=similar, recurse=recurse-1)
+                return
         # zc = .5*(xyzmin[2]+xyzmax[2])
         # See note above; global z axis is in local y-axis direction
         zc = .5*(xyzmin[1]+xyzmax[1])
@@ -996,6 +1011,7 @@ class TrglFragmentView(BaseFragmentView):
         self.stmax = stp.max(axis=0)
         # self.xyzmin = xyzmin
         # self.xyzmax = xyzmax
+        # print("shifted st min max", self.stmin, self.stmax)
 
         # stsize = self.stmax-self.stmin
         # starea = (stsize*stsize).sum()
@@ -1280,7 +1296,8 @@ class TrglFragmentView(BaseFragmentView):
         self.stpoints = None
         # print("rpm set stpoints to None")
         # self.setScaledTexturePoints()
-        self.rebuildStPoints()
+        # self.rebuildStPoints()
+        self.prev_pt_count = 0
         xyzs = self.vpoints[:,0:3]
         trgls = self.trgls()
         # print("rt before")
@@ -1322,7 +1339,8 @@ class TrglFragmentView(BaseFragmentView):
         pt0, pt1 = ta
         mapper.constraints = np.array([[pt0, 0., 0.], [pt1, 1., 0.]], dtype=np.float64)
         weight = .000001
-        mapper.ip_weights = np.full(self.stpoints.shape[0], weight)
+        # mapper.ip_weights = np.full(self.stpoints.shape[0], weight)
+        mapper.ip_weights = np.full(self.fragment.gtpoints.shape[0], weight)
         mapper.initial_points = self.fragment.gtpoints
         adjusted_sts = mapper.computeUvsFromABF()
         if adjusted_sts is None:
