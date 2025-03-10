@@ -2179,15 +2179,15 @@ class MainWindow(QMainWindow):
             print("No currently active fragment")
             return
         # mf = mfv.fragment
-        print("call reparam")
+        # print("call reparam")
         mfv.reparameterize()
-        print("call sstp")
-        mfv.prev_pt_count = 0
-        mfv.setScaledTexturePoints(similar=False, recurse=3)
+        # print("call sstp")
+        # mfv.prev_pt_count = 0
+        # mfv.setScaledTexturePoints(similar=False, recurse=3)
         cvv = self.project_view.cur_volume_view
         # Force recalculation of stxytf in GLDataWindow
         cvv.stxytf = None
-        print("call drawSlices")
+        # print("call drawSlices")
         self.drawSlices()
 
     def retriangulateActiveFragment(self):

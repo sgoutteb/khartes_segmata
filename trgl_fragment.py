@@ -678,7 +678,10 @@ class TrglFragmentView(BaseFragmentView):
                   ''')
             return
 
-        self.deleteDisconnectedComponents()
+        # TODO: do we want to delete disconnected components
+        # and free points at this time?  Or let reparameterize take care
+        # of it?
+        # self.deleteDisconnectedComponents()
         # self.deleteFreePoints()
         timer = Utils.Timer()
         timer.active = False
@@ -877,6 +880,7 @@ class TrglFragmentView(BaseFragmentView):
             print("mden, mden2", mden, mden2)
             print("recurse", recurse)
             if recurse > 0:
+                # self.reparameterize(rebuild_st_first=False)
                 self.reparameterize()
                 self.prev_pt_count = 0
                 self.setScaledTexturePoints(similar=similar, recurse=recurse-1)
@@ -888,7 +892,7 @@ class TrglFragmentView(BaseFragmentView):
         stp = np.zeros_like(gtps)
 
         if similar:
-            print("similar")
+            # print("similar")
             abcds = []
 
             a = (ux - vy)/mden2
@@ -977,16 +981,8 @@ class TrglFragmentView(BaseFragmentView):
         xyzmin = oxyzs.min(axis=0)
         xyzmax = oxyzs.max(axis=0)
         # print("xyz min max", xyzmin, xyzmax)
-        if max(abs(stmax[1]), abs(stmin[1])) > 3*abs(xyzmax[2]):
-            print("recurse", recurse)
-            print(stmin, stmax, xyzmin, xyzmax)
-            if recurse > 0:
-                print("setScaledTexturePoints: problem, reparameterizing surface", f.name, recurse)
-                self.reparameterize()
-                self.prev_pt_count = 0
-                self.setScaledTexturePoints(similar=similar, recurse=recurse-1)
-                return
         # zc = .5*(xyzmin[2]+xyzmax[2])
+
         # See note above; global z axis is in local y-axis direction
         zc = .5*(xyzmin[1]+xyzmax[1])
         # print("styc zc", styc, zc)
@@ -1012,6 +1008,19 @@ class TrglFragmentView(BaseFragmentView):
         # self.xyzmin = xyzmin
         # self.xyzmax = xyzmax
         # print("shifted st min max", self.stmin, self.stmax)
+        # self.stwin = self.stmax-self.stmin
+        #  self.xyzwin = xyzmax-xyzmin
+
+        if max(abs(stmax[1]), abs(stmin[1])) > 3*abs(xyzmax[2]):
+            print("recurse", recurse)
+            print(stmin, stmax, xyzmin, xyzmax)
+            if recurse > 0:
+                print("setScaledTexturePoints: problem, reparameterizing surface", f.name, recurse)
+                # self.reparameterize(rebuild_st_first=False)
+                self.reparameterize()
+                self.prev_pt_count = 0
+                self.setScaledTexturePoints(similar=similar, recurse=recurse-1)
+                return
 
         # stsize = self.stmax-self.stmin
         # starea = (stsize*stsize).sum()
@@ -1292,13 +1301,18 @@ class TrglFragmentView(BaseFragmentView):
             print("rebuildStPoints succeeded", len(self.stpoints))
         self.fragment.notifyModified()
 
-    def reparameterize(self):
+    def reparameterize(self, rebuild_st_first=False):
         self.stpoints = None
         # print("rpm set stpoints to None")
         # self.setScaledTexturePoints()
-        # self.rebuildStPoints()
-        self.prev_pt_count = 0
-        xyzs = self.vpoints[:,0:3]
+        if rebuild_st_first:
+            self.rebuildStPoints()
+        else:
+            self.prev_pt_count = 0
+        # use gpoints because this function may be called before
+        # volume is set
+        # xyzs = self.vpoints[:,0:3]
+        xyzs = self.fragment.gpoints[:,0:3]
         trgls = self.trgls()
         # print("rt before")
         # print(self.trgls()[(self.trgls()==181).any(axis=1)])
@@ -1314,9 +1328,16 @@ class TrglFragmentView(BaseFragmentView):
         self.deleteFreePoints()
         # print("rt after free points")
         # print(self.trgls()[(self.trgls()==181).any(axis=1)])
-        xyzs = self.vpoints[:,0:3]
+
+        # reset xyzs and trgls because above functions
+        # may have changed fragment.gpoints and fragment.trgls.
+        # use gpoints because this function may be called before
+        # volume is set
+        # xyzs = self.vpoints[:,0:3]
+        xyzs = self.fragment.gpoints[:,0:3]
         # txyzs is array[trgl #][trgl pt (0, 1, or 2)][pt xyz]
         trgls = self.trgls()
+        # print("rt", xyzs.shape, trgls.shape)
         # print("rt before mapper")
         # print(self.trgls()[(self.trgls()==181).any(axis=1)])
         mapper = UVMapper(xyzs, trgls)
@@ -1353,7 +1374,7 @@ class TrglFragmentView(BaseFragmentView):
         self.stpoints = None
         # TrglPointSet.findSpikes(xyzs, trgls, "after reparam")
         # print("reparameterize set stpoints to None")
-        self.setScaledTexturePoints()
+        self.setScaledTexturePoints(recurse=3)
         TrglPointSet.findSpikes(xyzs, trgls, "after reparameterize")
         # print(self.stpoints)
         self.fragment.notifyModified()
@@ -1640,8 +1661,8 @@ class TrglFragmentView(BaseFragmentView):
     # The disconnected point can be deleted in
     # another function
     def disconnectColocatedPoints(self):
-        if self.stpoints is None:
-            return
+        # if self.stpoints is None:
+        #     return
         trgls = self.fragment.trgls
         if len(trgls) == 0:
             return
@@ -1680,8 +1701,8 @@ class TrglFragmentView(BaseFragmentView):
     # This will create free points by deleting the
     # triangles that hold them
     def deleteDisconnectedComponents(self):
-        if self.stpoints is None:
-            return
+        # if self.stpoints is None:
+        #     return
         trgls = self.fragment.trgls
         if len(trgls) < 3:
             return
@@ -1726,14 +1747,16 @@ class TrglFragmentView(BaseFragmentView):
             self.fragment.trgls = trgls[keep_trgl]
 
     def deleteFreePoints(self):
-        if self.stpoints is None:
-            return
+        # if self.stpoints is None:
+        #     return
         trgls = self.fragment.trgls
         # Don't delete free points unless there is at
         # least one trgl
         if len(trgls) == 0:
             return
-        npt = len(self.stpoints)
+        # npt = len(self.stpoints)
+        # npt = trgls.max()+1
+        npt = len(self.fragment.gtpoints)
         free_flag = np.full(npt, True, dtype=np.bool_)
         free_flag[trgls.flatten()] = False
         nf = free_flag.sum()
@@ -1745,14 +1768,20 @@ class TrglFragmentView(BaseFragmentView):
         o2n[~free_flag] = np.ogrid[:nc]
         # fp_index = np.nonzero(free_flag)[0]
         self.fragment.trgls = o2n[trgls]
-        old_outside = self.stpoints[npt:].copy()
+        # print("dfp", npt, nf, nc, trgls.max(), self.fragment.trgls.max())
+        old_outside = None
+        if self.stpoints is not None and len(self.stpoints)>0:
+            old_outside = self.stpoints[npt:].copy()
         self.fragment.gpoints = self.fragment.gpoints[~free_flag]
         self.printGtpoints("dfp before")
         self.fragment.gtpoints = self.fragment.gtpoints[~free_flag]
         self.printGtpoints("dfp after")
-        self.stpoints = self.stpoints[~free_flag]
-        self.all_stpoints = np.concatenate((self.stpoints, old_outside))
+        if self.stpoints is not None and len(self.stpoints)>0:
+            self.stpoints = self.stpoints[~free_flag]
+            self.all_stpoints = np.concatenate((self.stpoints, old_outside))
+        # print("before", self.vpoints.shape)
         self.setLocalPoints(True, False)
+        # print("after", self.vpoints.shape)
 
     def printGtpoints(self, label=""):
         # Do nothing
