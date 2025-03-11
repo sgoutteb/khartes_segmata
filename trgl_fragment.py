@@ -284,7 +284,14 @@ class TrglFragment(BaseFragment):
                     # when zoomed in, pxsz is small
                     # pxsz[0] should be almost the same as pxsz[1]
                     # size of image pixel, in uv coordinates
+                    # print("ic", ic)
+                    # print("ms", ms)
+                    # print("dc", dc)
+                    # print("ac", ac)
+                    # print("dac", dac)
                     pxsz = (dc[0]/ms[1], dc[1]/ms[0])
+                    # pxsz = (dc[0]/ms[0], dc[1]/ms[1])
+                    # print("pxsz", pxsz)
                     # print("pxsz", pxsz)
                     # print(ic, ms, pxsz)
                     # image corners, in pixel coordinates
@@ -303,13 +310,15 @@ class TrglFragment(BaseFragment):
                     # TODO: img is actually BGRA, not RGBA, though
                     # the difference is not visible with gray-scale images
                     img = np.full((apc[1][1], apc[1][0], 4), 65536//2, dtype=map_image.dtype)
+
+                    # background color
+                    rgb = (1.,1.,1.)
                     # reversed because cv2 uses BGRA not RGBA
                     img[:,:,2] = 65535*rgb[0]
                     img[:,:,1] = 65535*rgb[1]
                     img[:,:,0] = 65535*rgb[2]
                     img[rpc[0][1]:rpc[1][1], rpc[0][0]:rpc[1][0]] = map_image[ric[0][1]:ric[1][1], ric[0][0]:ric[1][0]]
                     cv2.imwrite(str(image_path), img)
-                    rgb = (1.,1.,1.)
 
                     # rst = ((st0[0], st0[1]), (st1[0], st1[1]))
                     # print(rst)
@@ -346,8 +355,11 @@ class TrglFragment(BaseFragment):
     
             for i, pt in enumerate(tpts):
                 print("vt %f %f"%(pt[0], pt[1]), file=of)
+                '''
+                # diagnostics
                 if i < 2 or i > len(tpts)-3:
                     print("vt %f %f"%(pt[0], pt[1]))
+                '''
 
         print("# Faces: %d"%len(self.trgls), file=of)
         for trgl in self.trgls:
@@ -391,6 +403,14 @@ class TrglFragment(BaseFragment):
             fdict["area_sq_cm"] = area
             fdict["n_vrts"] = len(self.gpoints)
             fdict["n_trgls"] = len(self.trgls)
+            if fv is not None and fv.stpoints is not None and len(fv.stpoints) > 0:
+                tpts = fv.stpoints
+                a0 = tpts.min(axis=0)
+                a1 = tpts.max(axis=0)
+                da = a1-a0
+                fdict["st_width"] = da[0]
+                fdict["st_height"] = da[1]
+
             jdict[self.name] = fdict
             info_txt = json.dumps(jdict, indent=4)
             try:
