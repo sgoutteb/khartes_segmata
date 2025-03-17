@@ -174,7 +174,8 @@ class FragmentsModel(QtCore.QAbstractTableModel):
         if column == self.columnIndex("Name"):
             return fragment.name
         elif column == self.columnIndex("Color"):
-            return fragment.color.name()
+            # return fragment.color.name()
+            return (fragment.color.name(), None)
         elif column == self.columnIndex("Dir"):
             return ('X','Y')[fragment.direction]
         elif column == self.columnIndex("Pts"):

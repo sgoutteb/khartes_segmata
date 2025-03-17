@@ -1552,7 +1552,7 @@ class MainWindow(QMainWindow):
         hh.setMinimumSectionSize(30)
         # hh.setMinimumSectionSize(40)
         volumes_dsd = DirectionSelectorDelegate(self.volumes_table)
-        volumes_csd = ColorSelectorDelegate(self.volumes_table)
+        volumes_csd = ColorSelectorDelegate(self.volumes_table, has_colormap=True)
         volumes_cmsd = ColormapSelectorDelegate(self.volumes_table)
         volumes_osd = OpacitySelectorDelegate(self.volumes_table)
         volumes_mnsd = MinMaxSelectorDelegate(self.volumes_table)

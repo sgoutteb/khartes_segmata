@@ -35,45 +35,112 @@ nrrd.writer._write_data = nrrd_write_data_override
 
 # end of code to override pynrrd functionality
 
+class CSPushButton(QtWidgets.QPushButton):
+    def __init__(self, csd, index, parent=None):
+        super(CSPushButton, self).__init__(parent)
+        self.kh_model_index = index
+        self.kh_csd = csd
+
+    def resizeEvent(self, e):
+        # print("resized")
+        color, colormap = self.kh_model_index.data(Qt.DisplayRole)
+        self.kh_csd.setColor(self, color, colormap)
+
 class ColorSelectorDelegate(QtWidgets.QStyledItemDelegate):
-    def __init__(self, table, parent=None):
+    def __init__(self, table, has_colormap=False, parent=None):
         super(ColorSelectorDelegate, self).__init__(parent)
         self.table = table
-        # self.color = QColor()
+        self.has_colormap = has_colormap
+        # self.color = QtGui.QColor()
 
     def createEditor(self, parent, option, index):
         # print("ce csd", index.row())
-        cb = QtWidgets.QPushButton(parent)
+        # cb = QtWidgets.QPushButton(parent)
+        cb = CSPushButton(self, index, parent)
         cb.setContentsMargins(5,5,5,5)
+        # cb.setMinimumWidth(100)
+        if self.has_colormap:
+            cb.setMinimumWidth(100)
         cb.clicked.connect(lambda d: self.onClicked(d, cb, index))
+        cb.kh_model_index = index
+        # cb.kh_colorstr = ""
         return cb
 
     def onClicked(self, cb_index, push_button, model_index):
-        old_color = push_button.palette().color(QtGui.QPalette.Window)
-        new_color = QtWidgets.QColorDialog.getColor(old_color, self.table)
+        # old_color = push_button.palette().color(QtGui.QPalette.Window)
+        # print("mi", model_index.row(), model_index.column())
+        old_color, colormap = model_index.data(Qt.DisplayRole)
+        # old_color = push_button.kh_colorstr
+        new_color = QtWidgets.QColorDialog.getColor(QtGui.QColor(old_color), self.table)
         # print("old_color",old_color.name(),"new_color",new_color.name())
         if new_color.isValid() and new_color != old_color:
-            self.setColor(push_button, new_color.name())
+            self.setColor(push_button, new_color.name(), colormap)
             self.table.model().setData(model_index, new_color, Qt.EditRole)
+            # self.commitData(push_button)
 
-    # this could be a class function
-    def setColor(self, push_button, color):
+    # Set the color and colormap that are displayed
+    # in the push button widget.  Does not set
+    # the color in the Volume data structure.
+    def setColor(self, push_button, color, colormap):
         # color is a string, not a qcolor
         # print("pb setting color", color)
-        push_button.setStyleSheet("background-color: %s"%color)
+        # push_button.setStyleSheet("background-color: %s"%color)
+        # push_button.kh_colorstr = color
+        '''
+        push_button.setStyleSheet("background-color: black")
+        push_button.setStyleSheet("border-color: %s"%color)
+        push_button.setStyleSheet("border-width: 2px")
+        '''
+        # push_button.setStyleSheet("{background-color: black;border-color: %s; border-width: 2px}"%color)
+        # push_button.setStyleSheet("background-color: black; border-color: %s; border-width: 2px; border-style: solid; background-image: url(%s)"%(color, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAzoAAAABCAYAAAAW5NtHAAAAe0lEQVR4nO2WMQ5AIQhDgfvf2b/2DyaKpRpjJweaFwKpuJk1A7n71Fvlecy/IoLm6dXf5sF6tofpH92hHoe9tyMcBnOWk2GuclZnk+GwM0ExGwZzR58qD6pq11V9oipz6NbZZDyn5ZCqT9SOHKr6iyrvBFWfqMo7IeP5ADXkA/4FHr0TAAAAAElFTkSuQmCC"))
+        # push_button.setStyleSheet("background-color: black; border-color: %s; border-width: 2px; border-style: solid; background-image: url(%s)"%(color, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAzoAAAABCAYAAAAW5NtHAAAAe0lEQVR4nO2WMQ5AIQhDgfvf2b/2DyaKpRpjJweaFwKpuJk1A7n71Fvlecy/IoLm6dXf5sF6tofpH92hHoe9tyMcBnOWk2GuclZnk+GwM0ExGwZzR58qD6pq11V9oipz6NbZZDyn5ZCqT9SOHKr6iyrvBFWfqMo7IeP5ADXkA/4FHr0TAAAAAElFTkSuQmCC"))
+        # push_button.setTextFormat(Qt.RichText)
+        # push_button.setText('<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAzoAAAABCAYAAAAW5NtHAAAAe0lEQVR4nO2WMQ5AIQhDgfvf2b/2DyaKpRpjJweaFwKpuJk1A7n71Fvlecy/IoLm6dXf5sF6tofpH92hHoe9tyMcBnOWk2GuclZnk+GwM0ExGwZzR58qD6pq11V9oipz6NbZZDyn5ZCqT9SOHKr6iyrvBFWfqMo7IeP5ADXkA/4FHr0TAAAAAElFTkSuQmCC" width=30 height=30 />')
+                                  
+        # push_button.setStyleSheet("{background-color: black;}")
+        # push_button.setStyleSheet("background-color: black; border-color: %s; border-width: 2px; border-style: solid;"%(color))
+        # if colormap is not None and colormap != "":
+        # if colormap is not None:
+        if self.has_colormap:
+            if colormap == "":
+                colormap = "gray"
+            border_width = 3
+            push_button.setStyleSheet("background-color: black; border-color: %s; border-width: %dpx; border-style: solid;"%(color, border_width))
+            cmap = Utils.ColorMap(colormap, np.uint8, 256)
+            pw, ph = push_button.width(), push_button.height()
+            # print("pb sz", pw, ph)
+            # iwidth = 100
+            # iheight = 30
+            iwidth = pw-2*border_width
+            iheight = ph-2*border_width
+            # iwidth = pw
+            # iheight = ph
+            pm = cmap.pixmap(iwidth, iheight)
+            push_button.setIcon(QtGui.QIcon(pm))
+            push_button.setIconSize(QtCore.QSize(iwidth,iheight))
+            # push_button.setIconSize(push_button.size())
+        else:
+            push_button.setStyleSheet("background-color: %s"%(color))
+
 
     def setEditorData(self, editor, index):
         # print("sed", index.row(), index.data(Qt.EditRole))
         # print("sed", index.row(), index.data(Qt.DisplayRole))
-        color = index.data(Qt.DisplayRole)
+        color, colormap = index.data(Qt.DisplayRole)
+        # print("color, colormap", color, colormap)
         # color is a string
         if color:
             # editor.setCurrentIndex(cb_index)
-            self.setColor(editor, color)
+            self.setColor(editor, color, colormap)
 
     def setModelData(self, editor, model, index):
-        old_color = editor.palette().color(QtGui.QPalette.Window)
+        pass
+        # old_color = editor.palette().color(QtGui.QPalette.Window)
         # print("csd smd", old_color.name())
+        # old_color = editor.kh_colorstr
+        # print("csd smd", old_color)
+        # self.table.model().setData(model_index, new_color, Qt.EditRole)
+        # model.setData(index, QtGui.QColor(old_color), Qt.EditRole)
 
     def displayText(self, value, locale):
         return ""
@@ -178,6 +245,7 @@ class MinMaxSelectorDelegate(QtWidgets.QStyledItemDelegate):
         sb.setMaximum(255)
         sb.setSingleStep(1)
         sb.valueChanged.connect(lambda d: self.onValueChanged(d, sb, index), Qt.QueuedConnection)
+        # sb.lineEdit().setFocusPolicy(Qt.StrongFocus)
         sb.kh_value = -1.
         sb.setValue(128)
         # print("ce", sb.value())
@@ -201,6 +269,7 @@ class MinMaxSelectorDelegate(QtWidgets.QStyledItemDelegate):
             spin_box.setValue(changed_value)
         spin_box.kh_value = value
         spin_box.lineEdit().deselect()
+        spin_box.lineEdit().setFocus()
 
     def setEditorData(self, editor, index):
         minmax = index.data(Qt.DisplayRole)
@@ -239,7 +308,15 @@ class ColormapSelectorDelegate(QtWidgets.QStyledItemDelegate):
         return cb
 
     def onActivated(self, value, combo_box, model_index):
-        self.table.model().setData(model_index, combo_box.itemText(value), Qt.EditRole)
+        # index of the Color button
+        # color_index = model_index.sibling(model_index.row(), VolumesModel.columnIndex("Color"))
+        # color = color_index.data(Qt.DisplayRole)
+        # print("sed", index.row(), index.data(Qt.DisplayRole))
+        colormap = combo_box.itemText(value)
+        # self.table.model().setData(model_index, combo_box.itemText(value), Qt.EditRole)
+        # print("oa", color, colormap)
+        model_index.model().setData(model_index, colormap, Qt.EditRole)
+        # color_index.model().setData(color_index, color, Qt.EditRole)
 
     def setEditorData(self, editor, index):
         colormap = index.data(Qt.DisplayRole)
@@ -484,7 +561,8 @@ tiff files is aligned with the slice vertical axes""",
         if column == self.columnIndex("Name"):
             return volume.name
         elif column == self.columnIndex("Color"):
-            return volume_view.color.name()
+            # return volume_view.color.name()
+            return (volume_view.color.name(),volume_view.colormap_name)
         elif column == self.columnIndex("Colormap"):
             # print("ddr cmn", volume_view.colormap_name)
             return volume_view.colormap_name
@@ -641,8 +719,17 @@ tiff files is aligned with the slice vertical axes""",
             # volumes = self.project_view.volumes
             # volume_view = list(volumes.values())[row]
             self.main_window.setVolumeViewColormap(volume_view, full_name)
+            color_index = index.sibling(index.row(), VolumesModel.columnIndex("Color"))
+            # Notify Color Selector delegate that color map has changed,
+            # so that the Color push button can display the new
+            # colormap
+            self.dataChanged.emit(color_index, color_index, [role])
 
-        return False
+        # According to the Qt docs, setData should
+        # emit dataChanged and return True, if all goes well
+        self.dataChanged.emit(index, index, [role])
+        # return False
+        return True
 
 
 class VolumeView():

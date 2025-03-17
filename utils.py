@@ -5,7 +5,7 @@ import re
 import numpy as np
 import cmap
 from PyQt5.QtGui import QColorConstants as QCC
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QImage, QPixmap
 # import PySide6.QtGuiQColor.SVG as QtSVG
 
 c1 = QCC.Svg.skyblue
@@ -232,6 +232,21 @@ class Utils:
             # print(cmlut)
             self.lut[imin:(imax+1)] = cmlut
             self.lut[imin:(imax+1), 3] = alpha
+
+        def pixmap(self, width, height):
+            arr = np.zeros((height, width, 4), np.uint8)
+            lutsize = self.lut.shape[0]
+            fvals = np.linspace(0.,1.,width)
+            lvals = ((lutsize-1)*fvals).astype(np.uint8)
+            cvals = self.lut[lvals]
+            cvals[:,3] = 1.
+            arr[:,:,:] = 255*cvals[np.newaxis, :, :]
+            # print(arr[0,0])
+            # print(arr[-1,-1])
+            img = QImage(arr.data, width, height, 4*width, QImage.Format_RGBA8888)
+            pm = QPixmap(img)
+            return pm
+
 
     def getNextColorOld():
         Utils.colorCounter = (Utils.colorCounter+1)%len(Utils.colors)
