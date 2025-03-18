@@ -412,8 +412,8 @@ tiff files is aligned with the slice vertical axes""",
     '''
     ctips = [
             "Select which volume is visible;\nclick box to select",
-            "O1",
-            "O2",
+            "Volume overlay 1",
+            "Volume overlay 2",
             "Name of the volume",
             "Color of the volume outline drawn on slices;\nclick to edit",
             "Opacity if overlaid (0.0 transparent, 1.0 opaque)",

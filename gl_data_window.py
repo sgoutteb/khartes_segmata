@@ -2052,8 +2052,8 @@ OSError: exception: stack overflow
             cur_vol_view = dww.project_view.cur_volume_view
             cur_vol = dww.project_view.cur_volume
             for vol, vol_view in dww.project_view.volumes.items():
-                if vol == cur_vol:
-                    continue
+                # if vol == cur_vol:
+                #     continue
                 gs = vol.corners()
                 minxy, maxxy, intersects_slice = dw.cornersToXY(gs)
                 if not intersects_slice:
