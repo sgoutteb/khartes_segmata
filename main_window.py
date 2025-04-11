@@ -363,6 +363,19 @@ class ReparameterizeActiveFragmentButton(QPushButton):
     def onButtonClicked(self, s):
         self.main_window.reparameterizeActiveFragment()
 
+class RefineActiveFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(RefineActiveFragmentButton, self).__init__("Refine", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setEnabled(False)
+        self.setToolTip("Refining active fragment")
+        self.clicked.connect(self.onButtonClicked)
+
+    def onButtonClicked(self, s):
+        self.main_window.refineActiveFragment()
+        
+
 class RetriangulateActiveFragmentButton(QPushButton):
     def __init__(self, main_window, parent=None):
         super(RetriangulateActiveFragmentButton, self).__init__("Retriang", parent)
@@ -1384,6 +1397,8 @@ class MainWindow(QMainWindow):
         hlayout.addWidget(self.retriang_frag)
         self.reparam_frag = ReparameterizeActiveFragmentButton(self)
         hlayout.addWidget(self.reparam_frag)
+        self.refine_frag = RefineActiveFragmentButton(self)
+        hlayout.addWidget(self.refine_frag)
         self.copy_frag = CopyActiveFragmentButton(self)
         hlayout.addWidget(self.copy_frag)
         self.delete_frag = DeleteActiveFragmentButton(self)
@@ -1902,6 +1917,7 @@ class MainWindow(QMainWindow):
         self.export_mesh_action.setEnabled(active)
         self.copy_frag.setEnabled(active)
         self.reparam_frag.setEnabled(active)
+        self.refine_frag.setEnabled(active)
         self.retriang_frag.setEnabled(active)
         self.delete_frag.setEnabled(active)
         '''
@@ -2189,6 +2205,74 @@ class MainWindow(QMainWindow):
         cvv.stxytf = None
         # print("call drawSlices")
         self.drawSlices()
+    
+    def refineActiveFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot refine fragment without project")
+            return
+        mfv = pv.mainActiveFragmentView(unaligned_ok=False)
+        if mfv is None:
+            # this should never be reached; button should be
+            # inactive in this case
+            print("No currently active fragment")
+            return
+        mf = mfv.fragment
+
+        depl=2  # 2 pixels
+        nb_nodes_moved=0
+        #print(mf.vpoints[0])
+
+        #self.surface.setTf(self, self.surface.cur_frag_pts_xyijk[1])
+        #self.surface.setIjkTf(self.surface, self.surface.cur_frag_pts_xyijk[1].tolist())
+        #self.surface.setCursorPosition(self.surface.cur_frag_pts_xyijk[1])
+        
+        # Loop over all nodes
+        for index_node in range(self.surface.cur_frag_pts_xyijk.shape[0]-1):
+        #for index_node in range(2):
+            try:
+                tijk=self.surface.cur_frag_pts_xyijk[index_node][2:5]
+                #print(tijk)
+                self.recenterCurrentVolume(np.array([tijk[0],tijk[2],tijk[1]]))
+                self.surface.drawSlice()
+
+                self.surface.setMapImage(mfv)
+                if (mfv.map_image is not None):
+                    before_image=mfv.map_image[:,:,0]
+                    pt=self.surface.cur_frag_pts_xyijk[index_node][2:5]
+                    for direction in [+1, -1]:
+                        
+                        pt[0] += depl*direction*mfv.normals[index_node][0]
+                        pt[1] += depl*direction*mfv.normals[index_node][1]
+                        pt[2] += depl*direction*mfv.normals[index_node][2]
+                        
+                        index=int(self.surface.cur_frag_pts_xyijk[index_node][5])
+                        self.movePoint(mfv,index,pt,True,True)
+                        self.drawSlices()
+                        self.surface.setMapImage(mfv)
+                        after_image=mfv.map_image[:,:,0]
+                        diff=np.mean(after_image.astype(np.float32)-before_image.astype(np.float32))
+                        #print(f"index: {index} - Move {depl*direction}px - diff= {diff}")
+                        if diff<1:
+                            #Reverse the displacement
+                            pt[0] -= depl*direction*mfv.normals[index_node][0]
+                            pt[1] -= depl*direction*mfv.normals[index_node][1]
+                            pt[2] -= depl*direction*mfv.normals[index_node][2]
+                            self.movePoint(mfv,index,pt,True,True)
+                            self.drawSlices()
+                            self.surface.setMapImage(mfv)
+                            before_image=mfv.map_image[:,:,0]
+                        else:
+                            print(f"index: {index} - Move {depl*direction}px - diff= {diff}")
+                            nb_nodes_moved+=1
+                            break
+                        #import cv2
+                        #cv2.imwrite("test_output_khartes.png", after_image-before_image)
+                        #print(mfv)
+                print(f"{nb_nodes_moved} Nodes moved")
+            except:
+                print("erreur")
+
 
     def retriangulateActiveFragment(self):
         pv = self.project_view
