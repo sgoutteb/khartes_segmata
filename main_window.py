@@ -2207,6 +2207,7 @@ class MainWindow(QMainWindow):
         self.drawSlices()
     
     def refineActiveFragment(self):
+        import cv2
         pv = self.project_view
         if pv is None:
             print("Warning, cannot refine fragment without project")
@@ -2219,13 +2220,10 @@ class MainWindow(QMainWindow):
             return
         mf = mfv.fragment
 
-        depl=2  # 2 pixels
+        #possible_displ=[-1,-1,3,1,-2]  # displacment potential xx pixels  !! cumulative !!
+        possible_displ=[-1,-1,-1,4,1,1,-3]  # displacment potential xx pixels  !! cumulative !!
+        diff_limit=0
         nb_nodes_moved=0
-        #print(mf.vpoints[0])
-
-        #self.surface.setTf(self, self.surface.cur_frag_pts_xyijk[1])
-        #self.surface.setIjkTf(self.surface, self.surface.cur_frag_pts_xyijk[1].tolist())
-        #self.surface.setCursorPosition(self.surface.cur_frag_pts_xyijk[1])
         
         # Loop over all nodes
         for index_node in range(self.surface.cur_frag_pts_xyijk.shape[0]-1):
@@ -2240,38 +2238,46 @@ class MainWindow(QMainWindow):
                 if (mfv.map_image is not None):
                     before_image=mfv.map_image[:,:,0]
                     pt=self.surface.cur_frag_pts_xyijk[index_node][2:5]
-                    for direction in [+1, -1]:
+                    index=int(self.surface.cur_frag_pts_xyijk[index_node][5])
+                    pt_before=pt
+                    diff = [-100] * len(possible_displ)
+                    #cv2.imwrite(f"0_test_before.png", before_image)
+                    # Loop over all possible displacements
+                    for displ_index in range(len(possible_displ)):
                         
-                        pt[0] += depl*direction*mfv.normals[index_node][0]
-                        pt[1] += depl*direction*mfv.normals[index_node][1]
-                        pt[2] += depl*direction*mfv.normals[index_node][2]
+                        pt[0] = pt_before[0] + possible_displ[displ_index]*mfv.normals[index_node][0]
+                        pt[1] = pt_before[1] + possible_displ[displ_index]*mfv.normals[index_node][1]
+                        pt[2] = pt_before[2] + possible_displ[displ_index]*mfv.normals[index_node][2]
                         
-                        index=int(self.surface.cur_frag_pts_xyijk[index_node][5])
                         self.movePoint(mfv,index,pt,True,True)
                         self.drawSlices()
                         self.surface.setMapImage(mfv)
                         after_image=mfv.map_image[:,:,0]
-                        diff=np.mean(after_image.astype(np.float32)-before_image.astype(np.float32))
-                        #print(f"index: {index} - Move {depl*direction}px - diff= {diff}")
-                        if diff<1:
-                            #Reverse the displacement
-                            pt[0] -= depl*direction*mfv.normals[index_node][0]
-                            pt[1] -= depl*direction*mfv.normals[index_node][1]
-                            pt[2] -= depl*direction*mfv.normals[index_node][2]
-                            self.movePoint(mfv,index,pt,True,True)
-                            self.drawSlices()
-                            self.surface.setMapImage(mfv)
-                            before_image=mfv.map_image[:,:,0]
-                        else:
-                            print(f"index: {index} - Move {depl*direction}px - diff= {diff}")
-                            nb_nodes_moved+=1
-                            break
-                        #import cv2
-                        #cv2.imwrite("test_output_khartes.png", after_image-before_image)
-                        #print(mfv)
-                print(f"{nb_nodes_moved} Nodes moved")
-            except:
-                print("erreur")
+                        # Calculation of difference after-before (cost function for decision)
+                        diff[displ_index]=np.mean(after_image.astype(np.float32)-before_image.astype(np.float32))
+                        #cv2.imwrite(f"0_test_{displ_index}.png", after_image)
+
+                    indice_max = diff.index(max(diff))
+                    if diff[indice_max]>diff_limit:
+                        print(f"index: {index} - Move {sum(possible_displ[:indice_max+1])}px - diff= {diff[indice_max]}")
+                        nb_nodes_moved+=1
+                        pt[0] = pt_before[0] + sum(possible_displ[:indice_max+1])*mfv.normals[index_node][0]
+                        pt[1] = pt_before[1] + sum(possible_displ[:indice_max+1])*mfv.normals[index_node][1]
+                        pt[2] = pt_before[2] + sum(possible_displ[:indice_max+1])*mfv.normals[index_node][2]
+                        
+                        self.movePoint(mfv,index,pt,True,True)
+                        self.drawSlices()
+                    else:
+                        #Reverse the displacement                        
+                        self.movePoint(mfv,index,pt_before,True,True)
+                        self.drawSlices()
+                    
+            except Exception as e:
+                # Capturer et afficher l'erreur
+                print(f"Une erreur est survenue : {e}")        
+        
+        print(f"{nb_nodes_moved} Nodes moved / {self.surface.cur_frag_pts_xyijk.shape[0]-1} total nodes")
+
 
 
     def retriangulateActiveFragment(self):
