@@ -2225,6 +2225,7 @@ class MainWindow(QMainWindow):
         possible_displ=[-2, 4, -2]  # displacment potential xx pixels  !! cumulative !!
         diff_limit=0
         nb_nodes_moved=0
+        brightness_limite=40000
         
         # Loop over all nodes
         for index_node in range(self.surface.cur_frag_pts_xyijk.shape[0]-1):
@@ -2255,7 +2256,7 @@ class MainWindow(QMainWindow):
                         moyenne=0
                     #print(f"Moyenne zone= {moyenne}")
                     #cv2.imwrite(f"0_test_before.png", before_image)
-                    if moyenne<40000:
+                    if moyenne<brightness_limite:  # exclude bright zones
                         # Loop over all possible displacements
                         for displ_index in range(len(possible_displ)):
                             
