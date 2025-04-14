@@ -2307,7 +2307,7 @@ class MainWindow(QMainWindow):
                 print("============================")
                 print(f"{nb_nodes_moved} Nodes moved / {self.surface.cur_frag_pts_xyijk.shape[0]-1} total nodes")
             
-            #self.onSaveProjectButtonClick(True)
+            self.onSaveProjectButtonClick(True)
             self.refine_frag.setEnabled(True)
         else:
             print("No visible fragment !")
