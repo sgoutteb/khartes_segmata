@@ -3,7 +3,7 @@
 ## Instructions for use:
 
 Load a fragment,
-Move to a specific region you want to refine.
+Move to a specific region you want to refine (avoid the border of your mesh, to avoid strange modifications).
 Make the fragment active AND visible
 Zoom sufficicently to see about 100-200 nodes approximatively.
 The more nodes you have, the longer time for processing.
