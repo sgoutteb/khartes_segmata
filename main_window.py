@@ -2208,6 +2208,7 @@ class MainWindow(QMainWindow):
     
     def refineActiveFragment(self):
         import cv2
+        import pathlib
         pv = self.project_view
         if pv is None:
             print("Warning, cannot refine fragment without project")
@@ -2220,13 +2221,14 @@ class MainWindow(QMainWindow):
             return
         mf = mfv.fragment
 
-        #possible_displ=[-1,-1, 3, 1, -2]  # displacment potential xx pixels  !! cumulative !!
-        possible_displ=[-1, -1, -1, 4, 1, 1, -3]  # displacment potential xx pixels  !! cumulative !!
-        possible_displ=[-2, 4, -2]  # displacment potential xx pixels  !! cumulative !!
+        #possible_displ=[-1,-1, 3, 1, -2]  # displacement potential xx pixels  !! cumulative !!
+        possible_displ=[-1, -1, -1, 4, 1, 1, -3]  # displacement potential xx pixels  !! cumulative !!
+        possible_displ=[-2, 4, -2]  # displacement potential xx pixels  !! cumulative !!
         diff_limit=0
-        nb_nodes_moved=0
+        
         brightness_limite=40000
-        number_of_passes=1
+        number_of_passes=3
+        nb_nodes_moved_total=[]
 
         
         #self.recenterCurrentVolume(np.array([3400,6505,4100])) 
@@ -2240,7 +2242,8 @@ class MainWindow(QMainWindow):
             
             for pass_number in range(number_of_passes):
                 print("============================")
-                print(f"Pass Nr #{pass_number}")
+                print(f"Pass Nr #{pass_number+1}")
+                nb_nodes_moved=0
                 # Loop over all nodes
                 for index_node in range(self.surface.cur_frag_pts_xyijk.shape[0]-1):
                     self.refine_frag.setEnabled(False)
@@ -2306,11 +2309,15 @@ class MainWindow(QMainWindow):
                 
                 print("============================")
                 print(f"{nb_nodes_moved} Nodes moved / {self.surface.cur_frag_pts_xyijk.shape[0]-1} total nodes")
+                nb_nodes_moved_total.append(nb_nodes_moved)
             
-            self.onSaveProjectButtonClick(True)
+                self.onSaveProjectButtonClick(True) # Save for each pass.
             self.refine_frag.setEnabled(True)
+            print("============================")
+            print(f"{nb_nodes_moved_total}")
         else:
             print("No visible fragment !")
+
 
 
 
