@@ -2208,7 +2208,31 @@ class MainWindow(QMainWindow):
     
     def refineActiveFragment(self):
         import cv2
-        import pathlib
+        #import pathlib
+        from scipy.spatial import cKDTree
+
+        def calculate_average_distance(points):
+            tree = cKDTree(points)
+            distances, _ = tree.query(points, k=2)  # k=2 pour obtenir la distance au plus proche voisin
+            return np.mean(distances[:, 1])  # On prend la colonne 1 car la colonne 0 est la distance à lui-même
+
+        def select_points(points, min_distance, fraction):
+            tree = cKDTree(points)
+            selected_points = []
+            remaining_points = points.tolist()
+
+            while len(selected_points) < len(points) * fraction and remaining_points:
+                # Choisir un point aléatoire parmi les points restants
+                idx = np.random.randint(len(remaining_points))
+                point = remaining_points.pop(idx)
+
+                # Vérifier si ce point respecte la contrainte de distance minimale
+                if all(np.linalg.norm(np.array(point) - np.array(sp)) >= min_distance for sp in selected_points):
+                    selected_points.append(point)
+
+            return np.array(selected_points)
+        
+
         pv = self.project_view
         if pv is None:
             print("Warning, cannot refine fragment without project")
@@ -2230,13 +2254,22 @@ class MainWindow(QMainWindow):
         number_of_passes=3
         nb_nodes_moved_total=[]
 
+#*************************************************************************************************
+
+        points = np.random.rand(mf.gtpoints.shape[0], 2)
+        min_x, max_x = np.min(mf.gtpoints[:, 0]), np.max(mf.gtpoints[:, 0])
+        min_y, max_y = np.min(mf.gtpoints[:, 1]), np.max(mf.gtpoints[:, 1])
+        points[:, 0] = (mf.gtpoints[:, 0] - min_x) / (max_x - min_x)
+        points[:, 1] = (mf.gtpoints[:, 1] - min_y) / (max_y - min_y)
+       
+        # Concaténer les deux tableaux le long de l'axe des colonnes (axe 1)
+        concatenated_array = np.concatenate((points, mf.gpoints), axis=1)
+
+        # Sauvegarder le tableau concaténé au format CSV
+        np.savetxt('points.csv', concatenated_array, delimiter=',', fmt='%f', header='x,y,xs,ys,zs', comments='')
+
         
-        #self.recenterCurrentVolume(np.array([3400,6505,4100])) 
-        #self.surface.drawSlice()
-        #self.app.processEvents()
-        #pv.updateFragmentViews()
-        #self.surface.drawSlice()
-        #self.app.processEvents()
+#*************************************************************************************************
 
         if self.surface.cur_frag_pts_xyijk is not None:   # Test if currect segment is visible
             
@@ -2311,7 +2344,7 @@ class MainWindow(QMainWindow):
                 print(f"{nb_nodes_moved} Nodes moved / {self.surface.cur_frag_pts_xyijk.shape[0]-1} total nodes")
                 nb_nodes_moved_total.append(nb_nodes_moved)
             
-                self.onSaveProjectButtonClick(True) # Save for each pass.
+            self.onSaveProjectButtonClick(True) # Save for each pass.
             self.refine_frag.setEnabled(True)
             print("============================")
             print(f"{nb_nodes_moved_total}")
