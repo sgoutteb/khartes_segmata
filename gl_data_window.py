@@ -1465,8 +1465,8 @@ class GLDataWindowChild(QOpenGLWidget):
         # surface format option "DebugContext" is set
         self.logger = QOpenGLDebugLogger()
         self.logger.initialize()
-        self.logger.messageLogged.connect(lambda m: self.onLogMessage(self.message_prefix, m))
-        self.logger.startLogging(self.logging_mode)
+        #self.logger.messageLogged.connect(lambda m: self.onLogMessage(self.message_prefix, m))
+        #self.logger.startLogging(self.logging_mode)
         msg = QOpenGLDebugMessage.createApplicationMessage("test debug messaging")
         self.logger.logMessage(msg)
         self.localInitializeGL()

@@ -374,7 +374,31 @@ class RefineActiveFragmentButton(QPushButton):
 
     def onButtonClicked(self, s):
         self.main_window.refineActiveFragment()
-        
+
+class MoveZonepActiveFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(MoveZonepActiveFragmentButton, self).__init__("MZ+", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setEnabled(False)
+        self.setToolTip("Move Zone normal +2px")
+        self.clicked.connect(self.onButtonClicked)
+
+    def onButtonClicked(self, s):
+        self.main_window.MoveZonepActiveFragment()
+
+class MoveZonemActiveFragmentButton(QPushButton):
+    def __init__(self, main_window, parent=None):
+        super(MoveZonemActiveFragmentButton, self).__init__("MZ-", parent)
+        self.main_window = main_window
+        self.setStyleSheet("QPushButton { %s; padding: 5; }"%self.main_window.highlightedBackgroundStyle())
+        self.setEnabled(False)
+        self.setToolTip("Move Zone normal -2px")
+        self.clicked.connect(self.onButtonClicked)
+
+    def onButtonClicked(self, s):
+        self.main_window.MoveZonemActiveFragment()
+
 
 class RetriangulateActiveFragmentButton(QPushButton):
     def __init__(self, main_window, parent=None):
@@ -1399,6 +1423,10 @@ class MainWindow(QMainWindow):
         hlayout.addWidget(self.reparam_frag)
         self.refine_frag = RefineActiveFragmentButton(self)
         hlayout.addWidget(self.refine_frag)
+        self.movep_frag = MoveZonepActiveFragmentButton(self)
+        hlayout.addWidget(self.movep_frag)
+        self.movem_frag = MoveZonemActiveFragmentButton(self)
+        hlayout.addWidget(self.movem_frag)
         self.copy_frag = CopyActiveFragmentButton(self)
         hlayout.addWidget(self.copy_frag)
         self.delete_frag = DeleteActiveFragmentButton(self)
@@ -1918,6 +1946,8 @@ class MainWindow(QMainWindow):
         self.copy_frag.setEnabled(active)
         self.reparam_frag.setEnabled(active)
         self.refine_frag.setEnabled(active)
+        self.movep_frag.setEnabled(active)
+        self.movem_frag.setEnabled(active)
         self.retriang_frag.setEnabled(active)
         self.delete_frag.setEnabled(active)
         '''
@@ -2205,33 +2235,113 @@ class MainWindow(QMainWindow):
         cvv.stxytf = None
         # print("call drawSlices")
         self.drawSlices()
+
+
+    def MoveZonepActiveFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot move zone  without project")
+            return
+        mfv = pv.mainActiveFragmentView(unaligned_ok=False)
+        if mfv is None:
+            # this should never be reached; button should be
+            # inactive in this case
+            print("No currently active fragment")
+            return
+        mf = mfv.fragment
+
+        if self.surface.cur_frag_pts_xyijk is not None:   # Test if currect segment is visible
+            print("move zone +") 
+            displ=+2
+            points = self.surface.cur_frag_pts_xyijk[:, 0:2]
+
+            # Calculer le centre du nuage de points
+            center_x = np.mean(points[:, 0])
+            center_y = np.mean(points[:, 1])
+            center = np.array([center_x, center_y])
+
+            # Calculer la largeur et la hauteur du nuage de points
+            width = np.max(points[:, 0]) - np.min(points[:, 0])
+            height = np.max(points[:, 1]) - np.min(points[:, 1])
+
+            # Déterminer la distance minimale entre la largeur et la hauteur
+            min_distance = min(width, height)
+
+            # Calculer 50% de cette distance minimale
+            threshold_distance = 0.5 * min_distance
+
+            # Sélectionner les points dont la distance par rapport au centre est inférieure à cette valeur
+            selected_points=[]
+            for idx in range(len(points)):
+                if np.linalg.norm(points[idx,:] - center) < threshold_distance:
+                    print(f"{idx}/{len(points)}")
+                    index=int(self.surface.cur_frag_pts_xyijk[idx][5])
+                    selected_points.append(idx)
+                    pt=self.surface.cur_frag_pts_xyijk[idx][2:5]
+                    pt[0] = pt[0] + displ*mfv.normals[idx][0]
+                    pt[1] = pt[1] + displ*mfv.normals[idx][1]
+                    pt[2] = pt[2] + displ*mfv.normals[idx][2]
+                    self.movePoint(mfv,index,pt,True,True)                 
+                                    
+            self.drawSlices()
+            print(f"centre ({center_x},{center_y}) distance max from center: {threshold_distance}px {len(selected_points)} vertex moved")
+ 
+        return
+    
+    def MoveZonemActiveFragment(self):
+        pv = self.project_view
+        if pv is None:
+            print("Warning, cannot move zone  without project")
+            return
+        mfv = pv.mainActiveFragmentView(unaligned_ok=False)
+        if mfv is None:
+            # this should never be reached; button should be
+            # inactive in this case
+            print("No currently active fragment")
+            return
+        mf = mfv.fragment
+
+        if self.surface.cur_frag_pts_xyijk is not None:   # Test if currect segment is visible
+            print("move zone -") 
+            displ=-2
+            points = self.surface.cur_frag_pts_xyijk[:, 0:2]
+
+            # Calculer le centre du nuage de points
+            center_x = np.mean(points[:, 0])
+            center_y = np.mean(points[:, 1])
+            center = np.array([center_x, center_y])
+
+            # Calculer la largeur et la hauteur du nuage de points
+            width = np.max(points[:, 0]) - np.min(points[:, 0])
+            height = np.max(points[:, 1]) - np.min(points[:, 1])
+
+            # Déterminer la distance minimale entre la largeur et la hauteur
+            min_distance = min(width, height)
+
+            # Calculer 25% de cette distance minimale
+            threshold_distance = 0.25 * min_distance
+
+            # Sélectionner les points dont la distance par rapport au centre est inférieure à cette valeur
+            selected_points=[]
+            for idx in range(len(points)):
+                if np.linalg.norm(points[idx,:] - center) < threshold_distance:
+                    print(f"{idx}/{len(points)}")
+                    index=int(self.surface.cur_frag_pts_xyijk[idx][5])
+                    selected_points.append(idx)
+                    pt=self.surface.cur_frag_pts_xyijk[idx][2:5]
+                    pt[0] = pt[0] + displ*mfv.normals[idx][0]
+                    pt[1] = pt[1] + displ*mfv.normals[idx][1]
+                    pt[2] = pt[2] + displ*mfv.normals[idx][2]
+                    self.movePoint(mfv,index,pt,True,True)                 
+                                    
+            self.drawSlices()
+            print(f"centre ({center_x},{center_y}) distance max from center: {threshold_distance}px {len(selected_points)} vertex moved")
+ 
+    
+        return
     
     def refineActiveFragment(self):
         import cv2
-        #import pathlib
-        from scipy.spatial import cKDTree
-
-        def calculate_average_distance(points):
-            tree = cKDTree(points)
-            distances, _ = tree.query(points, k=2)  # k=2 pour obtenir la distance au plus proche voisin
-            return np.mean(distances[:, 1])  # On prend la colonne 1 car la colonne 0 est la distance à lui-même
-
-        def select_points(points, min_distance, fraction):
-            tree = cKDTree(points)
-            selected_points = []
-            remaining_points = points.tolist()
-
-            while len(selected_points) < len(points) * fraction and remaining_points:
-                # Choisir un point aléatoire parmi les points restants
-                idx = np.random.randint(len(remaining_points))
-                point = remaining_points.pop(idx)
-
-                # Vérifier si ce point respecte la contrainte de distance minimale
-                if all(np.linalg.norm(np.array(point) - np.array(sp)) >= min_distance for sp in selected_points):
-                    selected_points.append(point)
-
-            return np.array(selected_points)
-        
 
         pv = self.project_view
         if pv is None:
@@ -2251,7 +2361,7 @@ class MainWindow(QMainWindow):
         diff_limit=0
         
         brightness_limite=40000
-        number_of_passes=3
+        number_of_passes=1
         nb_nodes_moved_total=[]
 
 #*************************************************************************************************
